@@ -1,0 +1,58 @@
+﻿# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Distribution / packaging
+*.egg-info/
+.eggs/
+*.egg
+
+# PyInstaller
+/*.manifest
+/*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+
+# Jupyter
+.ipynb_checkpoints
+
+# Data / models / artifacts
+*.csv
+*.joblib
+*.pkl
+*.h5
+*.npy
+
+# Images & plots
+*.png
+*.jpg
+*.jpeg
+*.svg
+
+# TradingView scripts
+*.pine
+
+# IDEs
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
