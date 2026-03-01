@@ -3,8 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SuperTrend — Live Intraday</title>
+<title>OneView — Live Intraday</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-zoom/2.0.1/chartjs-plugin-zoom.min.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600;700&family=Syne:wght@400;700;800&display=swap');
 
@@ -215,6 +217,9 @@
   @keyframes spin { to { transform: rotate(360deg); } }
 
   #priceChart { max-height: 400px; }
+  .chart-hint { font-size: 0.65rem; color: var(--muted); margin-top: 8px; display: flex; justify-content: space-between; align-items: center; }
+  .btn-reset-zoom { font-family: "JetBrains Mono", monospace; font-size: 0.65rem; background: var(--border); color: var(--muted); border: none; border-radius: 4px; padding: 3px 10px; cursor: pointer; }
+  .btn-reset-zoom:hover { color: var(--text); }
 
   /* ── Summary Cards ── */
   .cards {
@@ -272,8 +277,12 @@
 
 <header>
   <div class="logo">
-    <h1>SuperTrend</h1>
+    <h1>OneView</h1>
     <span>Live Intraday</span>
+    <span style="font-size:0.6rem;color:#2a3548;background:#13181f;border:1px solid #1e2535;border-radius:4px;padding:2px 7px;margin-left:4px;letter-spacing:0.08em;">v1.5.0</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px;">
+    <button onclick="downloadHTML()" style="font-family:'JetBrains Mono',monospace;font-size:0.65rem;font-weight:700;padding:5px 12px;border-radius:5px;border:1px solid #1e2535;background:#10141c;color:#4a5568;cursor:pointer;text-transform:uppercase;letter-spacing:0.08em;transition:color 0.2s,border-color 0.2s;" onmouseover="this.style.color='#c8d4e8';this.style.borderColor='#3d8ef8'" onmouseout="this.style.color='#4a5568';this.style.borderColor='#1e2535'">⬇ Download</button>
   </div>
   <div class="price-display" id="priceDisplay" style="display:none">
     <div class="price" id="livePrice">—</div>
@@ -284,7 +293,7 @@
 <!-- Fetch Controls -->
 <div class="fetch-bar">
   <input type="text" id="symbolInput" value="BTC-USD" placeholder="BTC-USD" title="Yahoo Finance ticker"/>
-  <select id="intervalSelect">
+  <select id="intervalSelect" onchange="autoConfirmBars(this.value)">
     <option value="1m">1 Minute</option>
     <option value="5m" selected>5 Minutes</option>
     <option value="15m">15 Minutes</option>
@@ -292,6 +301,13 @@
   </select>
   <button class="btn btn-primary" onclick="fetchAndRun()">▶ Fetch &amp; Run</button>
   <button class="btn btn-refresh" id="refreshBtn" onclick="fetchAndRun()" disabled>⟳ Refresh</button>
+  <div class="auto-wrap">
+    <label class="toggle">
+      <input type="checkbox" id="lastDayOnly" onchange="fetchAndRun()">
+      <span class="slider"></span>
+    </label>
+    Last Day Only
+  </div>
   <div class="auto-wrap">
     <label class="toggle">
       <input type="checkbox" id="autoRefresh" onchange="toggleAutoRefresh()">
@@ -318,9 +334,9 @@
       <option value="sma">SMA</option>
     </select>
   </div>
-  <div class="ctrl-pill" title="Trend must hold this many consecutive candles before a signal is printed — eliminates whipsaw clusters">
+  <div class="ctrl-pill" title="Trend must hold this many consecutive candles before a signal is printed — eliminates whipsaw clusters. Recommended: 1m=10, 5m=5, 15m=4, 30m=3">
     <label>Confirm Bars</label>
-    <input type="number" id="confirmBars" value="3" min="1" max="20">
+    <input type="number" id="confirmBars" value="5" min="1" max="50">
   </div>
   <div class="ctrl-pill toggle-pill" onclick="toggleCheck('showSignals')">
     <label class="toggle"><input type="checkbox" id="showSignals" checked><span class="slider"></span></label>
@@ -346,6 +362,10 @@
     <span>Fetching data…</span>
   </div>
   <canvas id="priceChart"></canvas>
+  <div class="chart-hint">
+    <span>🖱 Scroll to zoom &nbsp;·&nbsp; Click &amp; drag to pan &nbsp;·&nbsp; Double-click to reset</span>
+    <button class="btn-reset-zoom" onclick="resetZoom()">Reset Zoom</button>
+  </div>
 </div>
 
 <!-- Summary Cards -->
@@ -516,7 +536,15 @@ async function fetchAndRun() {
 
   try {
     const json     = await fetchData(symbol, interval);
-    const candles  = json.data;
+    let candles = json.data;
+
+    // Last Day Only filter — keep only candles matching the most recent date
+    const lastDayOnly = document.getElementById("lastDayOnly").checked;
+    if (lastDayOnly && candles.length > 0) {
+      const lastDate = candles[candles.length - 1].date.slice(0, 10);
+      candles = candles.filter(c => c.date.slice(0, 10) === lastDate);
+    }
+
     const result   = calcSuperTrend(candles, period, mult, useRMA);
     const signals  = extractSignals(candles, result);
 
@@ -545,37 +573,42 @@ function extractSignals(candles, result) {
   const confirmBars = parseInt(document.getElementById("confirmBars").value) || 3;
   const signals = [];
   const n = candles.length;
+  let inFlip = false;
+  let flipDir = 0;
+  let flipBar = -1;
+  let consecutiveCount = 0;
 
-  for (let i = confirmBars; i < n; i++) {
-    if (isNaN(result.trend[i])) continue;
+  for (let i = 1; i < n; i++) {
+    if (isNaN(result.trend[i]) || isNaN(result.trend[i - 1])) continue;
 
-    // Detect the initial flip point (where trend first changed)
-    const flipBar = i - confirmBars + 1;
-    if (isNaN(result.trend[flipBar]) || isNaN(result.trend[flipBar - 1])) continue;
+    const trendChanged = result.trend[i] !== result.trend[i - 1];
 
-    const flippedUp   = result.trend[flipBar] === 1  && result.trend[flipBar - 1] === -1;
-    const flippedDown = result.trend[flipBar] === -1 && result.trend[flipBar - 1] === 1;
-
-    if (!flippedUp && !flippedDown) continue;
-
-    // Check all confirmBars candles held the same direction after the flip
-    let confirmed = true;
-    for (let k = flipBar; k <= i; k++) {
-      if (result.trend[k] !== result.trend[flipBar]) { confirmed = false; break; }
-    }
-
-    if (!confirmed) continue;
-
-    // Avoid duplicate signals — only emit once per flip
-    const alreadyEmitted = signals.length > 0 && signals[signals.length - 1].flipBar === flipBar;
-    if (alreadyEmitted) continue;
-
-    if (flippedUp) {
-      signals.push({ i, flipBar, type: "BUY",  date: candles[i].date, close: candles[i].close, st: result.st[i],
-        flipDate: candles[flipBar].date, flipClose: candles[flipBar].close });
-    } else {
-      signals.push({ i, flipBar, type: "SELL", date: candles[i].date, close: candles[i].close, st: result.st[i],
-        flipDate: candles[flipBar].date, flipClose: candles[flipBar].close });
+    if (trendChanged) {
+      inFlip = true;
+      flipDir = result.trend[i];
+      flipBar = i;
+      consecutiveCount = 1;
+    } else if (inFlip) {
+      if (result.trend[i] === flipDir) {
+        consecutiveCount++;
+        if (consecutiveCount >= confirmBars) {
+          signals.push({
+            i, flipBar,
+            type: flipDir === 1 ? "BUY" : "SELL",
+            date:      candles[i].date,
+            close:     candles[i].close,
+            st:        result.st[i],
+            flipDate:  candles[flipBar].date,
+            flipClose: candles[flipBar].close,
+          });
+          inFlip = false;
+        }
+      } else {
+        inFlip = true;
+        flipDir = result.trend[i];
+        flipBar = i;
+        consecutiveCount = 1;
+      }
     }
   }
   return signals;
@@ -611,17 +644,25 @@ function renderChart(candles, result, signals, showSig) {
   ];
 
   if (showSig) {
+    // Build plain arrays aligned with candles (null = no signal at that index)
+    // This avoids {x,y} parsing issues on the category scale that caused arrows
+    // to cluster at the left edge of the chart.
+    const buyData  = new Array(candles.length).fill(null);
+    const sellData = new Array(candles.length).fill(null);
+    signals.forEach(s => {
+      if (s.type === "BUY")  buyData[s.i]  = s.close * 0.997;
+      if (s.type === "SELL") sellData[s.i] = s.close * 1.003;
+    });
+
     datasets.push({
       label: "BUY", showLine: false, order: 1,
-      data: signals.filter(s => s.type==="BUY").map(s => ({ x: s.i, y: s.close * 0.997 })),
-      parsing: { xAxisKey:"x", yAxisKey:"y" },
+      data: buyData,
       borderColor: "#00e676", backgroundColor: "#00e676",
       pointStyle: "triangle", pointRadius: 9,
     });
     datasets.push({
       label: "SELL", showLine: false, order: 1,
-      data: signals.filter(s => s.type==="SELL").map(s => ({ x: s.i, y: s.close * 1.003 })),
-      parsing: { xAxisKey:"x", yAxisKey:"y" },
+      data: sellData,
       borderColor: "#ff1744", backgroundColor: "#ff1744",
       pointStyle: "triangle", pointRadius: 9, rotation: 180,
     });
@@ -644,6 +685,20 @@ function renderChart(candles, result, signals, showSig) {
           titleFont: { family: "JetBrains Mono", size: 11 },
           bodyFont:  { family: "JetBrains Mono", size: 11 },
           callbacks: { label: c => c.parsed.y == null ? null : ` ${c.dataset.label}: ${c.parsed.y.toLocaleString(undefined,{maximumFractionDigits:4})}` }
+        },
+        zoom: {
+          zoom: {
+            wheel: { enabled: true },
+            pinch: { enabled: true },
+            mode: "x",
+          },
+          pan: {
+            enabled: true,
+            mode: "x",
+          },
+          limits: {
+            x: { minRange: 10 },
+          }
         }
       },
       scales: {
@@ -710,6 +765,39 @@ function renderTable(signals, symbol, interval) {
     `).join("");
   }
   document.getElementById("tableWrap").style.display = "block";
+}
+
+// ─── Auto Confirm Bars ────────────────────────────────────────────────────
+// Suggested confirm bars per interval:
+// 1m  → 10 bars = 10 min confirmation
+// 5m  → 5  bars = 25 min confirmation
+// 15m → 4  bars = 60 min confirmation
+// 30m → 3  bars = 90 min confirmation
+const CONFIRM_DEFAULTS = { "1m": 10, "5m": 5, "15m": 4, "30m": 3 };
+
+function autoConfirmBars(interval) {
+  const el = document.getElementById("confirmBars");
+  el.value = CONFIRM_DEFAULTS[interval] || 5;
+  // flash the field to show it changed
+  el.style.color = "var(--accent)";
+  setTimeout(() => el.style.color = "", 800);
+}
+
+// ─── Download ─────────────────────────────────────────────────────────────
+function downloadHTML() {
+  const html = document.documentElement.outerHTML;
+  const blob = new Blob([html], { type: "text/html" });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
+  a.href     = url;
+  a.download = "oneview-v1.5.0.html";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ─── Zoom ─────────────────────────────────────────────────────────────────
+function resetZoom() {
+  if (myChart) myChart.resetZoom();
 }
 
 // ─── Auto-Refresh ─────────────────────────────────────────────────────────

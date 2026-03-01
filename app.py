@@ -1,23 +1,22 @@
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 import yfinance as yf
-import pandas as pd
 import traceback
 import os
 
-app = Flask(__name__, static_folder="static")
+app = Flask(__name__, static_folder="main")
 CORS(app)
 
 @app.route("/")
 def index():
-    return send_from_directory("static", "index.html")
+    return send_from_directory("", "index.html")
 
 @app.route("/api/ohlcv")
 def get_ohlcv():
     symbol   = request.args.get("symbol", "BTC-USD").upper()
     interval = request.args.get("interval", "5m")  # 1m 5m 15m 30m
 
-    # 1m data max = last 7 days on Yahoo Finance
+    # OneView v1.4.0 — 1m data max = last 7 days on Yahoo Finance
     period = "7d"
 
     try:
@@ -27,21 +26,8 @@ def get_ohlcv():
         if df.empty:
             return jsonify({"error": f"No data found for '{symbol}'. Try: BTC-USD, AAPL, EURUSD=X"}), 404
 
-        # Ensure index is datetime and strip timezone for clean JSON
-        try:
-            df.index = pd.to_datetime(df.index)
-            if getattr(df.index, 'tz', None) is not None:
-                try:
-                    # convert to UTC then remove tz info (works for tz-aware index)
-                    df.index = df.index.tz_convert('UTC').tz_localize(None)
-                except Exception:
-                    try:
-                        df.index = df.index.tz_localize(None)
-                    except Exception:
-                        pass
-        except Exception:
-            # if any conversion fails, fall back to leaving the index as-is
-            pass
+        # Strip timezone for clean JSON
+        df.index = df.index.tz_localize(None) if df.index.tzinfo else df.index
         df.reset_index(inplace=True)
 
         date_col = "Datetime" if "Datetime" in df.columns else "Date"
