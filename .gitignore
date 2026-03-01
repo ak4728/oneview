@@ -49,6 +49,9 @@ coverage.xml
 # TradingView scripts
 *.pine
 
+# Prototype / dev folders
+indicator_prototype/
+
 # IDEs
 .vscode/
 .idea/
@@ -56,3 +59,7 @@ coverage.xml
 # OS files
 .DS_Store
 Thumbs.db
+
+# Environment variables
+.env
+.env.local

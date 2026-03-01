@@ -279,7 +279,7 @@
   <div class="logo">
     <h1>OneView</h1>
     <span>Live Intraday</span>
-    <span style="font-size:0.6rem;color:#2a3548;background:#13181f;border:1px solid #1e2535;border-radius:4px;padding:2px 7px;margin-left:4px;letter-spacing:0.08em;">v1.5.0</span>
+    <span style="font-size:0.6rem;color:#2a3548;background:#13181f;border:1px solid #1e2535;border-radius:4px;padding:2px 7px;margin-left:4px;letter-spacing:0.08em;">v1.8.0</span>
   </div>
   <div style="display:flex;align-items:center;gap:10px;">
     <button onclick="downloadHTML()" style="font-family:'JetBrains Mono',monospace;font-size:0.65rem;font-weight:700;padding:5px 12px;border-radius:5px;border:1px solid #1e2535;background:#10141c;color:#4a5568;cursor:pointer;text-transform:uppercase;letter-spacing:0.08em;transition:color 0.2s,border-color 0.2s;" onmouseover="this.style.color='#c8d4e8';this.style.borderColor='#3d8ef8'" onmouseout="this.style.color='#4a5568';this.style.borderColor='#1e2535'">⬇ Download</button>
@@ -345,6 +345,31 @@
   <div class="ctrl-pill toggle-pill" onclick="toggleCheck('highlighting')">
     <label class="toggle"><input type="checkbox" id="highlighting" checked><span class="slider"></span></label>
     <label style="cursor:pointer">Highlight</label>
+  </div>
+</div>
+
+<!-- SMC Controls -->
+<div class="st-controls" style="border-top:1px solid var(--border);padding-top:10px;">
+  <span style="font-size:0.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.1em;padding:0 4px;">SMC</span>
+  <div class="ctrl-pill toggle-pill" onclick="toggleCheck('smcEnabled')">
+    <label class="toggle"><input type="checkbox" id="smcEnabled" checked onchange="rerender()"><span class="slider"></span></label>
+    <label style="cursor:pointer">Smart Money</label>
+  </div>
+  <div class="ctrl-pill toggle-pill" onclick="toggleCheck('smcBosChoch')">
+    <label class="toggle"><input type="checkbox" id="smcBosChoch" checked onchange="rerender()"><span class="slider"></span></label>
+    <label style="cursor:pointer">BOS / CHoCH</label>
+  </div>
+  <div class="ctrl-pill toggle-pill" onclick="toggleCheck('smcOrderBlocks')">
+    <label class="toggle"><input type="checkbox" id="smcOrderBlocks" checked onchange="rerender()"><span class="slider"></span></label>
+    <label style="cursor:pointer">Order Blocks</label>
+  </div>
+  <div class="ctrl-pill">
+    <label>OB Count</label>
+    <input type="number" id="smcOBCount" value="5" min="1" max="20" onchange="rerender()">
+  </div>
+  <div class="ctrl-pill">
+    <label>Swing Len</label>
+    <input type="number" id="smcSwingLen" value="5" min="2" max="50" onchange="rerender()">
   </div>
 </div>
 
@@ -431,6 +456,9 @@ let myChart = null;
 let autoTimer = null;
 let countdown = 0;
 let countdownInterval = null;
+let lastCandles = null;   // stored for SMC rerender without refetch
+let lastResult  = null;
+let lastSignals = null;
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 function toggleCheck(id) {
@@ -450,6 +478,13 @@ function showLoading(show) {
   const ov = document.getElementById("loading-overlay");
   ov.style.display = show ? "flex" : "none";
   document.getElementById("chartWrap").style.display = "block";
+}
+
+function rerender() {
+  if (!lastCandles) return;
+  const showSig = document.getElementById("showSignals").checked;
+  const smcData = calcSMC(lastCandles);
+  renderChart(lastCandles, lastResult, lastSignals, showSig, smcData);
 }
 
 // ─── SuperTrend Maths ──────────────────────────────────────────────────────
@@ -548,7 +583,11 @@ async function fetchAndRun() {
     const result   = calcSuperTrend(candles, period, mult, useRMA);
     const signals  = extractSignals(candles, result);
 
-    renderChart(candles, result, signals, showSig);
+    lastCandles = candles;
+    lastResult  = result;
+    lastSignals = signals;
+    const smcData = calcSMC(candles);
+    renderChart(candles, result, signals, showSig, smcData);
     renderCards(candles, result, signals, json);
     renderTable(signals, symbol, interval);
     updatePriceDisplay(candles, json);
@@ -614,8 +653,113 @@ function extractSignals(candles, result) {
   return signals;
 }
 
+// ─── Smart Money Concepts Engine ──────────────────────────────────────────
+function calcSMC(candles) {
+  const n          = candles.length;
+  const swingLen   = parseInt(document.getElementById("smcSwingLen").value) || 5;
+  const obCount    = parseInt(document.getElementById("smcOBCount").value)  || 5;
+
+  // ── Swing highs / lows using pivot detection ──
+  // A swing high at i means candles[i].high is highest of [i-len .. i+len]
+  const swingHighs = []; // {i, price}
+  const swingLows  = []; // {i, price}
+
+  for (let i = swingLen; i < n - swingLen; i++) {
+    let isHigh = true, isLow = true;
+    for (let k = 1; k <= swingLen; k++) {
+      if (candles[i].high <= candles[i - k].high || candles[i].high <= candles[i + k].high) isHigh = false;
+      if (candles[i].low  >= candles[i - k].low  || candles[i].low  >= candles[i + k].low)  isLow  = false;
+    }
+    if (isHigh) swingHighs.push({ i, price: candles[i].high });
+    if (isLow)  swingLows.push({  i, price: candles[i].low  });
+  }
+
+  // ── BOS / CHoCH detection ──
+  // Track current swing structure bias; detect breaks
+  const structures = []; // {i, type:'BOS'|'CHoCH', bias:'bull'|'bear', level, fromI}
+
+  let lastSwingHigh = swingHighs[0] || null;
+  let lastSwingLow  = swingLows[0]  || null;
+  let structureBias = null; // 'bull' or 'bear'
+
+  // Walk through all swings in chronological order
+  const allSwings = [
+    ...swingHighs.map(s => ({ ...s, kind: 'high' })),
+    ...swingLows.map(s  => ({ ...s, kind: 'low'  })),
+  ].sort((a, b) => a.i - b.i);
+
+  let prevHigh = null, prevLow = null;
+
+  for (const swing of allSwings) {
+    if (swing.kind === 'high') {
+      // Check if close broke above previous swing high → bullish structure
+      for (let ci = (prevHigh ? prevHigh.i : 0) + 1; ci <= swing.i; ci++) {
+        if (prevHigh && candles[ci].close > prevHigh.price) {
+          const tag = structureBias === 'bear' ? 'CHoCH' : 'BOS';
+          structures.push({ i: ci, type: tag, bias: 'bull', level: prevHigh.price, fromI: prevHigh.i });
+          structureBias = 'bull';
+          break;
+        }
+      }
+      prevHigh = swing;
+    } else {
+      // Check if close broke below previous swing low → bearish structure
+      for (let ci = (prevLow ? prevLow.i : 0) + 1; ci <= swing.i; ci++) {
+        if (prevLow && candles[ci].close < prevLow.price) {
+          const tag = structureBias === 'bull' ? 'CHoCH' : 'BOS';
+          structures.push({ i: ci, type: tag, bias: 'bear', level: prevLow.price, fromI: prevLow.i });
+          structureBias = 'bear';
+          break;
+        }
+      }
+      prevLow = swing;
+    }
+  }
+
+  // ── Order Blocks ──
+  // Bullish OB: last bearish candle before a bullish BOS/CHoCH
+  // Bearish OB: last bullish candle before a bearish BOS/CHoCH
+  const orderBlocks = []; // {i, bias:'bull'|'bear', high, low, mitigated}
+
+  for (const s of structures) {
+    if (s.bias === 'bull') {
+      // Find last bearish candle before the structure break
+      for (let k = s.i - 1; k >= Math.max(0, s.fromI); k--) {
+        if (candles[k].close < candles[k].open) {
+          orderBlocks.push({ i: k, bias: 'bull', high: candles[k].high, low: candles[k].low, breakI: s.i });
+          break;
+        }
+      }
+    } else {
+      // Find last bullish candle before the structure break
+      for (let k = s.i - 1; k >= Math.max(0, s.fromI); k--) {
+        if (candles[k].close > candles[k].open) {
+          orderBlocks.push({ i: k, bias: 'bear', high: candles[k].high, low: candles[k].low, breakI: s.i });
+          break;
+        }
+      }
+    }
+  }
+
+  // Mark mitigated OBs (price returned into the OB zone after creation)
+  for (const ob of orderBlocks) {
+    ob.mitigated = false;
+    for (let ci = ob.breakI + 1; ci < n; ci++) {
+      if (ob.bias === 'bull' && candles[ci].low < ob.low) { ob.mitigated = true; ob.mitigatedI = ci; break; }
+      if (ob.bias === 'bear' && candles[ci].high > ob.high) { ob.mitigated = true; ob.mitigatedI = ci; break; }
+    }
+  }
+
+  // Keep only most recent unmitigated OBs up to obCount
+  const activeOBs = orderBlocks
+    .filter(ob => !ob.mitigated)
+    .slice(-obCount);
+
+  return { structures, orderBlocks: activeOBs, swingHighs, swingLows };
+}
+
 // ─── Chart ────────────────────────────────────────────────────────────────
-function renderChart(candles, result, signals, showSig) {
+function renderChart(candles, result, signals, showSig, smcData = null) {
   const labels  = candles.map(c => c.date);
   const closes  = candles.map(c => c.close);
   const highlighting = document.getElementById("highlighting").checked;
@@ -668,6 +812,131 @@ function renderChart(candles, result, signals, showSig) {
     });
   }
 
+  // Plugin to draw BUY / SELL text next to each signal triangle
+  const signalLabelsPlugin = {
+    id: "signalLabels",
+    afterDatasetsDraw(chart) {
+      if (!showSig) return;
+      const { ctx, scales } = chart;
+      ctx.save();
+      ctx.font = "bold 10px 'JetBrains Mono', monospace";
+      ctx.textBaseline = "middle";
+
+      signals.forEach(s => {
+        const xPos = scales.x.getPixelForValue(s.i);
+        const yVal = s.type === "BUY" ? s.close * 0.997 : s.close * 1.003;
+        const yPos = scales.y.getPixelForValue(yVal);
+        ctx.fillStyle = s.type === "BUY" ? "#00e676" : "#ff1744";
+        ctx.fillText(s.type === "BUY" ? "Buy" : "Sell", xPos + 10, yPos);
+      });
+
+      ctx.restore();
+    }
+  };
+
+  // ── SMC Overlay Plugin ────────────────────────────────────────────────
+  const smcPlugin = {
+    id: "smcOverlay",
+    afterDraw(chart) {
+      if (!smcData) return;
+      const showSMC = document.getElementById("smcEnabled").checked;
+      if (!showSMC) return;
+
+      const { ctx, chartArea: { left, right, top, bottom }, scales } = chart;
+      const showBosChoch    = document.getElementById("smcBosChoch").checked;
+      const showOB          = document.getElementById("smcOrderBlocks").checked;
+
+      ctx.save();
+
+      // ── Order Blocks ────────────────────────────────────────────────────
+      if (showOB && smcData.orderBlocks) {
+        for (const ob of smcData.orderBlocks) {
+          const x0   = scales.x.getPixelForValue(ob.i);
+          const xEnd = right;
+          const yHi  = scales.y.getPixelForValue(ob.high);
+          const yLo  = scales.y.getPixelForValue(ob.low);
+          const h    = Math.abs(yHi - yLo);
+
+          ctx.fillStyle   = ob.bias === 'bull'
+            ? 'rgba(33, 87, 243, 0.18)'
+            : 'rgba(242, 54, 69, 0.18)';
+          ctx.strokeStyle = ob.bias === 'bull'
+            ? 'rgba(33, 87, 243, 0.6)'
+            : 'rgba(242, 54, 69, 0.6)';
+          ctx.lineWidth   = 1;
+
+          ctx.fillRect(x0, yHi, xEnd - x0, h);
+          ctx.strokeRect(x0, yHi, xEnd - x0, h);
+
+          // OB label
+          ctx.fillStyle = ob.bias === 'bull' ? '#4d8af8' : '#f23645';
+          ctx.font      = 'bold 9px JetBrains Mono, monospace';
+          ctx.fillText(ob.bias === 'bull' ? 'Bull OB' : 'Bear OB', x0 + 4, yHi + 10);
+        }
+      }
+
+      // ── BOS / CHoCH Lines & Labels ──────────────────────────────────────
+      if (showBosChoch && smcData.structures) {
+        for (const s of smcData.structures) {
+          // Only draw recent structures (last 60% of candles to avoid clutter)
+          if (s.i < candles.length * 0.4) continue;
+
+          const xFrom = scales.x.getPixelForValue(s.fromI);
+          const xTo   = scales.x.getPixelForValue(s.i);
+          const yLvl  = scales.y.getPixelForValue(s.level);
+
+          if (yLvl < top || yLvl > bottom) continue;
+
+          const isBull  = s.bias === 'bull';
+          const isChoch = s.type === 'CHoCH';
+
+          // Color scheme:
+          // BOS  bull → green  #089981
+          // BOS  bear → red    #f23645
+          // CHoCH bull → blue  #2157f3
+          // CHoCH bear → orange #f5a623
+          let color;
+          if (isChoch) {
+            color = isBull ? '#2157f3' : '#f5a623';
+          } else {
+            color = isBull ? '#089981' : '#f23645';
+          }
+
+          // Line — solid for BOS, dashed for CHoCH
+          ctx.strokeStyle = color;
+          ctx.lineWidth   = 1.5;
+          ctx.setLineDash(isChoch ? [4, 3] : []);
+          ctx.beginPath();
+          ctx.moveTo(xFrom, yLvl);
+          ctx.lineTo(xTo,   yLvl);
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          // Label box
+          const tag     = s.type;
+          const padding = 3;
+          ctx.font      = 'bold 9px JetBrains Mono, monospace';
+          const tw      = ctx.measureText(tag).width;
+          const bx      = xTo - tw / 2 - padding;
+          const by      = isBull ? yLvl - 16 : yLvl + 2;
+          const bw      = tw + padding * 2;
+          const bh      = 13;
+
+          ctx.fillStyle = color;
+          ctx.beginPath();
+          ctx.roundRect(bx, by, bw, bh, 2);
+          ctx.fill();
+
+          ctx.fillStyle = '#fff';
+          ctx.textBaseline = 'top';
+          ctx.fillText(tag, bx + padding, by + 2);
+        }
+      }
+
+      ctx.restore();
+    }
+  };
+
   if (myChart) myChart.destroy();
   const ctx = document.getElementById("priceChart").getContext("2d");
   myChart = new Chart(ctx, {
@@ -706,7 +975,7 @@ function renderChart(candles, result, signals, showSig) {
         y: { ticks: { color: "#4a5568", font: { family: "JetBrains Mono", size: 10 } }, grid: { color: "#1e2535" } }
       }
     },
-    plugins: [bgPlugin]
+    plugins: [bgPlugin, signalLabelsPlugin, smcPlugin]
   });
 
   showLoading(false);
@@ -790,7 +1059,7 @@ function downloadHTML() {
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement("a");
   a.href     = url;
-  a.download = "oneview-v1.5.0.html";
+  a.download = "oneview-v1.8.0.html";
   a.click();
   URL.revokeObjectURL(url);
 }
