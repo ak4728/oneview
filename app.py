@@ -1,6 +1,7 @@
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 import yfinance as yf
+import pandas as pd
 import traceback
 import os
 
@@ -26,16 +27,21 @@ def get_ohlcv():
         if df.empty:
             return jsonify({"error": f"No data found for '{symbol}'. Try: BTC-USD, AAPL, EURUSD=X"}), 404
 
-        # Strip timezone for clean JSON (handle different pandas index attributes)
-        tz = getattr(df.index, 'tz', None)
-        if tz is not None:
-            try:
-                df.index = df.index.tz_localize(None)
-            except Exception:
+        # Ensure index is datetime and strip timezone for clean JSON
+        try:
+            df.index = pd.to_datetime(df.index)
+            if getattr(df.index, 'tz', None) is not None:
                 try:
-                    df.index = df.index.tz_convert(None)
+                    # convert to UTC then remove tz info (works for tz-aware index)
+                    df.index = df.index.tz_convert('UTC').tz_localize(None)
                 except Exception:
-                    pass
+                    try:
+                        df.index = df.index.tz_localize(None)
+                    except Exception:
+                        pass
+        except Exception:
+            # if any conversion fails, fall back to leaving the index as-is
+            pass
         df.reset_index(inplace=True)
 
         date_col = "Datetime" if "Datetime" in df.columns else "Date"
