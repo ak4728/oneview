@@ -26,8 +26,16 @@ def get_ohlcv():
         if df.empty:
             return jsonify({"error": f"No data found for '{symbol}'. Try: BTC-USD, AAPL, EURUSD=X"}), 404
 
-        # Strip timezone for clean JSON
-        df.index = df.index.tz_localize(None) if df.index.tzinfo else df.index
+        # Strip timezone for clean JSON (handle different pandas index attributes)
+        tz = getattr(df.index, 'tz', None)
+        if tz is not None:
+            try:
+                df.index = df.index.tz_localize(None)
+            except Exception:
+                try:
+                    df.index = df.index.tz_convert(None)
+                except Exception:
+                    pass
         df.reset_index(inplace=True)
 
         date_col = "Datetime" if "Datetime" in df.columns else "Date"
