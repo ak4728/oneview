@@ -1,0 +1,54 @@
+// Generated Pine Script v6
+//@version=6
+strategy('Auto Strategy v2 (overlay)', overlay=false)
+norm_len = input.int(20, 'Normalization Length', minval=1)
+smooth_len = input.int(3, 'Combo Smooth Length', minval=1)
+threshold = input.float(0.0, 'Signal Threshold', step=0.0001)
+show_signals = input.bool(true, 'Show Buy/Sell Signals')
+
+// Per-feature calculations
+[MACD, _, _] = ta.macd(close, 12, 26, 9)
+[_, _, ADX_14] = ta.dmi(14, 14)
+ROC_10 = ta.roc(close, 10)
+ROC_10_m = ta.sma(ROC_10, norm_len)
+ROC_10_s = ta.stdev(ROC_10, norm_len)
+ROC_10_z = ROC_10_s == 0 ? 0 : (ROC_10 - ROC_10_m) / ROC_10_s
+RSI_14 = ta.rsi(close, 14)
+RSI_14_m = ta.sma(RSI_14, norm_len)
+RSI_14_s = ta.stdev(RSI_14, norm_len)
+RSI_14_z = RSI_14_s == 0 ? 0 : (RSI_14 - RSI_14_m) / RSI_14_s
+var float obv = 0
+obv := obv[1] + (close > close[1] ? volume : close < close[1] ? -volume : 0)
+OBV = obv
+OBV_m = ta.sma(OBV, norm_len)
+OBV_s = ta.stdev(OBV, norm_len)
+OBV_z = OBV_s == 0 ? 0 : (OBV - OBV_m) / OBV_s
+MACD = MACD
+MACD_m = ta.sma(MACD, norm_len)
+MACD_s = ta.stdev(MACD, norm_len)
+MACD_z = MACD_s == 0 ? 0 : (MACD - MACD_m) / MACD_s
+ADX_14 = ADX_14
+ADX_14_m = ta.sma(ADX_14, norm_len)
+ADX_14_s = ta.stdev(ADX_14, norm_len)
+ADX_14_z = ADX_14_s == 0 ? 0 : (ADX_14 - ADX_14_m) / ADX_14_s
+
+// Combine normalized features using provided weights
+combo_raw = (0.249481) * ROC_10_z + (0.242385) * RSI_14_z + (0.230770) * OBV_z + (0.175594) * MACD_z + (0.101770) * ADX_14_z
+combo = ta.ema(combo_raw, smooth_len)
+plot(combo, title='Combo', color=color.blue)
+// Optional threshold and signals
+plot(threshold, title='Threshold', color=color.gray, linewidth=1)
+signal_long = combo > threshold
+signal_short = combo < -threshold
+plotshape(show_signals and signal_long, title='Long', location=location.belowbar, color=color.green, style=shape.triangleup, size=size.small)
+plotshape(show_signals and signal_short, title='Short', location=location.abovebar, color=color.red, style=shape.triangledown, size=size.small)
+stop_pct = input.float(1.0, 'Stop %', step=0.1) / 100.0
+take_pct = input.float(2.0, 'Take Profit %', step=0.1) / 100.0
+if show_signals and signal_long
+    strategy.entry('Long', strategy.long)
+    // optional: strategy.exit('Exit Long', 'Long', stop=close*(1-stop_pct), limit=close*(1+take_pct))
+if show_signals and signal_short
+    strategy.entry('Short', strategy.short)
+    // optional: strategy.exit('Exit Short', 'Short', stop=close*(1+stop_pct), limit=close*(1-take_pct))
+
+// End of generated script
