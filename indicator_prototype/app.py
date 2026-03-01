@@ -1,59 +1,60 @@
-import streamlit as st
-import pandas as pd
-from data import fetch_ohlcv
-from indicators import compute_indicators
-from train import train_model
-from pinegen import generate_pine
-from backtest import simple_threshold_backtest
-import plotly.express as px
+from flask import Flask, jsonify, request, send_from_directory
+from flask_cors import CORS
+import yfinance as yf
+import traceback
+import os
+
+app = Flask(__name__, static_folder="static")
+CORS(app)
+
+@app.route("/")
+def index():
+    return send_from_directory("static", "index.html")
+
+@app.route("/api/ohlcv")
+def get_ohlcv():
+    symbol   = request.args.get("symbol", "BTC-USD").upper()
+    interval = request.args.get("interval", "5m")  # 1m 5m 15m 30m
+
+    # 1m data max = last 7 days on Yahoo Finance
+    period = "7d"
+
+    try:
+        ticker = yf.Ticker(symbol)
+        df = ticker.history(period=period, interval=interval, auto_adjust=True)
+
+        if df.empty:
+            return jsonify({"error": f"No data found for '{symbol}'. Try: BTC-USD, AAPL, EURUSD=X"}), 404
+
+        # Strip timezone for clean JSON
+        df.index = df.index.tz_localize(None) if df.index.tzinfo else df.index
+        df.reset_index(inplace=True)
+
+        date_col = "Datetime" if "Datetime" in df.columns else "Date"
+
+        records = []
+        for _, row in df.iterrows():
+            records.append({
+                "date":   str(row[date_col])[:16],   # "2024-01-01 09:30"
+                "open":   round(float(row["Open"]),  4),
+                "high":   round(float(row["High"]),  4),
+                "low":    round(float(row["Low"]),   4),
+                "close":  round(float(row["Close"]), 4),
+                "volume": int(row.get("Volume", 0) or 0),
+            })
+
+        return jsonify({
+            "symbol":   symbol,
+            "interval": interval,
+            "count":    len(records),
+            "data":     records,
+        })
+
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
 
-st.title('Indicator Prototype Explorer')
-
-symbol = st.sidebar.text_input('Symbol', 'SPY')
-years = st.sidebar.number_input('Years', 1, 10, 5)
-if st.sidebar.button('Load Data'):
-    with st.spinner('Fetching data...'):
-        df = fetch_ohlcv(symbol, years=years)
-        df_ind = compute_indicators(df)
-        st.session_state['df_ind'] = df_ind
-        st.success('Data loaded')
-
-if 'df_ind' in st.session_state:
-    df_ind = st.session_state['df_ind']
-    st.subheader('Indicator Sample')
-    st.dataframe(df_ind.tail(50))
-
-    if st.button('Train & Generate'):
-        with st.spinner('Training model...'):
-            model, importance, shap_values = train_model(df_ind)
-            st.write('Top features')
-            st.write(importance.head(10))
-            top = importance.head(5)
-            weights = (top / top.sum()).to_dict()
-            feature_weights = [(k, float(v)) for k, v in weights.items()]
-            pine = generate_pine(feature_weights, title=f'{symbol} Auto Combo', as_strategy=False)
-            st.subheader('Generated Pine Script (indicator)')
-            st.code(pine)
-            strat = generate_pine(feature_weights, title=f'{symbol} Auto Strategy', as_strategy=True)
-            st.subheader('Generated Pine Script (strategy)')
-            st.code(strat)
-            # compute combo locally
-            df_test = df_ind.copy()
-            norm_len = 20
-            for name, weight in feature_weights:
-                if name in df_test.columns:
-                    m = df_test[name].rolling(norm_len).mean()
-                    s = df_test[name].rolling(norm_len).std()
-                    df_test[name + '_z'] = (df_test[name] - m) / s
-                else:
-                    df_test[name + '_z'] = 0
-            combo_raw = sum((weight * df_test[name + '_z'].fillna(0)) for name, weight in feature_weights)
-            df_test['combo'] = combo_raw.ewm(span=3).mean()
-            metrics, trades = simple_threshold_backtest(df_test, combo_col='combo', threshold=0.0)
-            st.subheader('Backtest Metrics')
-            st.json(metrics)
-            st.subheader('Equity Curve')
-            cum = (1 + trades['returns']).cumprod()
-            fig = px.line(cum, title='Equity Curve')
-            st.plotly_chart(fig)
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False)
