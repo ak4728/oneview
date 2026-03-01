@@ -318,10 +318,6 @@
       <option value="sma">SMA</option>
     </select>
   </div>
-  <div class="ctrl-pill" title="Trend must hold this many consecutive candles before a signal is printed — eliminates whipsaw clusters">
-    <label>Confirm Bars</label>
-    <input type="number" id="confirmBars" value="3" min="1" max="20">
-  </div>
   <div class="ctrl-pill toggle-pill" onclick="toggleCheck('showSignals')">
     <label class="toggle"><input type="checkbox" id="showSignals" checked><span class="slider"></span></label>
     <label style="cursor:pointer">Signals</label>
@@ -389,11 +385,10 @@
       <thead>
         <tr>
           <th>#</th>
-          <th>Confirmed At</th>
+          <th>Datetime</th>
           <th>Signal</th>
           <th>Close</th>
           <th>SuperTrend</th>
-          <th>Flip Started</th>
         </tr>
       </thead>
       <tbody id="signalBody"></tbody>
@@ -542,41 +537,13 @@ async function fetchAndRun() {
 }
 
 function extractSignals(candles, result) {
-  const confirmBars = parseInt(document.getElementById("confirmBars").value) || 3;
   const signals = [];
-  const n = candles.length;
-
-  for (let i = confirmBars; i < n; i++) {
+  for (let i = 1; i < candles.length; i++) {
     if (isNaN(result.trend[i])) continue;
-
-    // Detect the initial flip point (where trend first changed)
-    const flipBar = i - confirmBars + 1;
-    if (isNaN(result.trend[flipBar]) || isNaN(result.trend[flipBar - 1])) continue;
-
-    const flippedUp   = result.trend[flipBar] === 1  && result.trend[flipBar - 1] === -1;
-    const flippedDown = result.trend[flipBar] === -1 && result.trend[flipBar - 1] === 1;
-
-    if (!flippedUp && !flippedDown) continue;
-
-    // Check all confirmBars candles held the same direction after the flip
-    let confirmed = true;
-    for (let k = flipBar; k <= i; k++) {
-      if (result.trend[k] !== result.trend[flipBar]) { confirmed = false; break; }
-    }
-
-    if (!confirmed) continue;
-
-    // Avoid duplicate signals — only emit once per flip
-    const alreadyEmitted = signals.length > 0 && signals[signals.length - 1].flipBar === flipBar;
-    if (alreadyEmitted) continue;
-
-    if (flippedUp) {
-      signals.push({ i, flipBar, type: "BUY",  date: candles[i].date, close: candles[i].close, st: result.st[i],
-        flipDate: candles[flipBar].date, flipClose: candles[flipBar].close });
-    } else {
-      signals.push({ i, flipBar, type: "SELL", date: candles[i].date, close: candles[i].close, st: result.st[i],
-        flipDate: candles[flipBar].date, flipClose: candles[flipBar].close });
-    }
+    if (result.trend[i] === 1 && result.trend[i-1] === -1)
+      signals.push({ i, type:"BUY",  date: candles[i].date, close: candles[i].close, st: result.st[i] });
+    else if (result.trend[i] === -1 && result.trend[i-1] === 1)
+      signals.push({ i, type:"SELL", date: candles[i].date, close: candles[i].close, st: result.st[i] });
   }
   return signals;
 }
@@ -705,7 +672,6 @@ function renderTable(signals, symbol, interval) {
         <td><span class="tag ${s.type.toLowerCase()}">${s.type}</span></td>
         <td>${s.close.toLocaleString(undefined,{maximumFractionDigits:4})}</td>
         <td style="color:${s.type==="BUY"?"var(--green)":"var(--red)"}">${s.st.toLocaleString(undefined,{maximumFractionDigits:4})}</td>
-        <td style="color:var(--muted);font-size:0.68rem">${s.flipDate}</td>
       </tr>
     `).join("");
   }
