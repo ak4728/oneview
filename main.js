@@ -1,6 +1,7 @@
 const API_BASE = "";
 const PREFS_KEY = "oneview.preferences.v1";
 const FAV_KEY = "oneview.favorites.v1";
+const LOG_COLLAPSED_KEY = "oneview.signalLogCollapsed.v1";
 const PREDEFINED_TICKERS = [
   "BTC-USD", "ETH-USD", "SOL-USD", "AAPL", "TSLA", "NVDA", "MSFT", "EURUSD=X"
 ];
@@ -15,6 +16,7 @@ let lastRawCandles = null;
 let lastCandles = null;
 let lastResult = null;
 let lastSignals = null;
+let isSignalLogCollapsed = true;
 
 function $(id) { return document.getElementById(id); }
 
@@ -29,6 +31,26 @@ function loadJSON(key, fallback) {
 
 function saveJSON(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
+}
+
+function loadSignalLogCollapsed() {
+  const value = loadJSON(LOG_COLLAPSED_KEY, true);
+  return typeof value === "boolean" ? value : true;
+}
+
+function setSignalLogCollapsed(collapsed) {
+  isSignalLogCollapsed = Boolean(collapsed);
+  const tableScroll = $("tableScroll");
+  const btn = $("toggleSignalLogBtn");
+  if (!tableScroll || !btn) return;
+
+  tableScroll.style.display = isSignalLogCollapsed ? "none" : "block";
+  btn.textContent = isSignalLogCollapsed ? "Show" : "Hide";
+  saveJSON(LOG_COLLAPSED_KEY, isSignalLogCollapsed);
+}
+
+function toggleSignalLog() {
+  setSignalLogCollapsed(!isSignalLogCollapsed);
 }
 
 function getPreferences() {
@@ -161,7 +183,48 @@ function autoConfirmBars(interval) {
 }
 
 function parseDate(dateStr) {
-  return new Date(String(dateStr).replace(" ", "T"));
+  const raw = String(dateStr || "").trim();
+  if (!raw) return new Date(NaN);
+
+  const isoLike = raw.includes("T") ? raw : raw.replace(" ", "T");
+  const hasZone = /[zZ]$|[+\-]\d{2}:?\d{2}$/.test(isoLike);
+  return new Date(hasZone ? isoLike : `${isoLike}Z`);
+}
+
+function formatLocalDateTime(dateStr) {
+  const dt = parseDate(dateStr);
+  if (Number.isNaN(dt.getTime())) return String(dateStr || "");
+  return dt.toLocaleString([], {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatLocalDay(dateStr) {
+  const dt = parseDate(dateStr);
+  if (Number.isNaN(dt.getTime())) return String(dateStr || "").slice(0, 10);
+  return dt.toLocaleDateString([], {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+}
+
+function formatChartLabel(dateStr, interval) {
+  const dt = parseDate(dateStr);
+  if (Number.isNaN(dt.getTime())) return String(dateStr || "");
+
+  if (interval === "1d") {
+    return dt.toLocaleDateString([], { month: "short", day: "numeric" });
+  }
+
+  return dt.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function applyRangeFilter(candles, mode) {
@@ -169,8 +232,8 @@ function applyRangeFilter(candles, mode) {
   if (mode === "all") return candles;
 
   if (mode === "last-day") {
-    const lastDate = candles[candles.length - 1].date.slice(0, 10);
-    return candles.filter(c => c.date.slice(0, 10) === lastDate);
+    const lastDate = formatLocalDay(candles[candles.length - 1].date);
+    return candles.filter(c => formatLocalDay(c.date) === lastDate);
   }
 
   if (mode === "last-24h") {
@@ -381,7 +444,8 @@ function calcSMC(candles) {
 }
 
 function renderChart(candles, result, signals, showSig, smcData) {
-  const labels = candles.map(c => c.date);
+  const interval = $("intervalSelect").value;
+  const labels = candles.map(c => formatChartLabel(c.date, interval));
   const closes = candles.map(c => c.close);
   const highlighting = $("highlighting").checked;
 
@@ -526,6 +590,11 @@ function renderChart(candles, result, signals, showSig, smcData) {
           titleColor: "#dce7f5",
           bodyColor: "#c0d0e8",
           callbacks: {
+            title(context) {
+              if (!context.length) return "";
+              const idx = context[0].dataIndex;
+              return formatLocalDateTime(candles[idx].date);
+            },
             label(context) {
               if (context.parsed.y == null) return null;
               return ` ${context.dataset.label}: ${context.parsed.y.toLocaleString(undefined, { maximumFractionDigits: 4 })}`;
@@ -557,12 +626,12 @@ function renderCards(candles, signals, json) {
 
   $("buyCount").textContent = buys.length;
   $("sellCount").textContent = sells.length;
-  $("lastBuy").textContent = buys.length ? `Last: ${buys[buys.length - 1].date}` : "No buy signals";
-  $("lastSell").textContent = sells.length ? `Last: ${sells[sells.length - 1].date}` : "No sell signals";
+  $("lastBuy").textContent = buys.length ? `Last: ${formatLocalDateTime(buys[buys.length - 1].date)}` : "No buy signals";
+  $("lastSell").textContent = sells.length ? `Last: ${formatLocalDateTime(sells[sells.length - 1].date)}` : "No sell signals";
   $("candleCount").textContent = candles.length;
-  $("dataRange").textContent = `${candles[0].date.slice(0, 10)} -> ${last.date.slice(0, 10)}`;
+  $("dataRange").textContent = `${formatLocalDay(candles[0].date)} -> ${formatLocalDay(last.date)}`;
   $("lastClose").textContent = last.close.toLocaleString(undefined, { maximumFractionDigits: 4 });
-  $("lastCloseTime").textContent = last.date;
+  $("lastCloseTime").textContent = formatLocalDateTime(last.date);
 
   $("cardsRow").style.display = "grid";
 }
@@ -574,7 +643,7 @@ function updatePriceDisplay(candles) {
   const sym = $("symbolInput").value.trim().toUpperCase();
 
   $("livePrice").textContent = last.close.toLocaleString(undefined, { maximumFractionDigits: 4 });
-  $("livePriceMeta").textContent = `${sym} · ${chg >= 0 ? "+" : ""}${chg.toFixed(2)}% · ${last.date}`;
+  $("livePriceMeta").textContent = `${sym} · ${chg >= 0 ? "+" : ""}${chg.toFixed(2)}% · ${formatLocalDateTime(last.date)}`;
   $("livePriceMeta").style.color = chg >= 0 ? "var(--green)" : "var(--red)";
   $("priceDisplay").style.display = "block";
 }
@@ -589,16 +658,17 @@ function renderTable(signals, symbol, interval) {
     tbody.innerHTML = signals.slice().reverse().map((s, idx) => `
       <tr>
         <td style="color:var(--muted)">${signals.length - idx}</td>
-        <td>${s.date}</td>
+        <td>${formatLocalDateTime(s.date)}</td>
         <td><span class="tag ${s.type.toLowerCase()}">${s.type}</span></td>
         <td>${s.close.toLocaleString(undefined, { maximumFractionDigits: 4 })}</td>
         <td style="color:${s.type === "BUY" ? "var(--green)" : "var(--red)"}">${s.st.toLocaleString(undefined, { maximumFractionDigits: 4 })}</td>
-        <td style="color:var(--muted);font-size:0.76rem">${s.flipDate}</td>
+        <td style="color:var(--muted);font-size:0.76rem">${formatLocalDateTime(s.flipDate)}</td>
       </tr>
     `).join("");
   }
 
   $("tableWrap").style.display = "block";
+  setSignalLogCollapsed(isSignalLogCollapsed);
 }
 
 async function fetchData(symbol, interval) {
@@ -721,6 +791,8 @@ function toggleAutoRefresh() {
 
 function initEvents() {
   $("refreshBtn").addEventListener("click", fetchAndRun);
+  $("toggleSignalLogBtn").addEventListener("click", toggleSignalLog);
+
   $("intervalSelect").addEventListener("change", () => {
     autoConfirmBars($("intervalSelect").value);
     persistPreferences();
@@ -765,6 +837,9 @@ function initEvents() {
 }
 
 function init() {
+  isSignalLogCollapsed = loadSignalLogCollapsed();
+  setSignalLogCollapsed(isSignalLogCollapsed);
+
   applyPreferences();
   initEvents();
   renderPredefinedTickers();

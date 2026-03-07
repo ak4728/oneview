@@ -74,7 +74,8 @@ app.get('/api/ohlcv', async (req, res) => {
       return res.status(404).json({ error: `No data found for '${symbol}'. Try: BTC-USD, AAPL, EURUSD=X` })
     }
 
-    const records = (result as any[]).map((row) => {
+    const records = (result as any[])
+      .map((row) => {
       const dateObj = row.date || row.datetime || row.Datetime || row.timestamp
       const dateStr = dateObj ? new Date(dateObj).toISOString().replace('T', ' ').slice(0, 16) : ''
       return {
@@ -86,6 +87,12 @@ app.get('/api/ohlcv', async (req, res) => {
         volume: row.volume !== undefined ? parseInt(String(row.volume || 0), 10) : 0,
       }
     })
+      // Yahoo occasionally emits placeholder intraday rows with OHLC all zero.
+      // Remove those to prevent chart spikes to zero.
+      .filter((r) => {
+        if (r.open === null || r.high === null || r.low === null || r.close === null) return false
+        return !(r.open === 0 && r.high === 0 && r.low === 0 && r.close === 0)
+      })
 
     return res.json({ symbol, interval, count: records.length, data: records })
   } catch (err: any) {

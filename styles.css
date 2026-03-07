@@ -84,14 +84,31 @@ header {
 
 .app-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-columns: minmax(0, 1fr) 300px;
   gap: 14px;
+}
+
+.side-column .fetch-bar {
+  margin-bottom: 8px;
+}
+
+.side-column .st-controls {
+  margin-top: 8px;
 }
 
 .main-column, .side-column {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.side-column {
+  position: sticky;
+  top: 10px;
+  align-self: start;
+  max-height: calc(100vh - 22px);
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .panel {
@@ -219,21 +236,44 @@ kbd {
 }
 
 .st-controls {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
-  flex-wrap: wrap;
-  align-items: center;
+}
+
+.advanced-controls {
+  grid-column: 1 / -1;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  background: #111a28;
+}
+
+.advanced-controls > summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.advanced-grid {
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .ctrl-pill {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 7px;
   padding: 7px 10px;
   font-size: 0.78rem;
+  width: 100%;
 }
 
 .ctrl-pill label {
@@ -265,10 +305,13 @@ kbd {
 .help::after {
   content: attr(data-tip);
   position: absolute;
-  width: 220px;
+  width: 260px;
+  max-width: 75vw;
   left: 50%;
   top: 125%;
   transform: translateX(-50%);
+  display: block;
+  box-sizing: border-box;
   background: #1a2638;
   color: #d2e0f7;
   border: 1px solid #314867;
@@ -276,13 +319,34 @@ kbd {
   padding: 8px;
   font-size: 0.72rem;
   line-height: 1.35;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.2s;
   z-index: 20;
 }
 
-.help:hover::after { opacity: 1; }
+.help::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: calc(125% - 6px);
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-bottom: 6px solid #1a2638;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+  z-index: 21;
+}
+
+.help:hover::after,
+.help:hover::before { opacity: 1; }
 
 .status-row {
   display: flex;
@@ -364,7 +428,11 @@ kbd {
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
-#priceChart { max-height: 420px; }
+#priceChart {
+  height: 56vh !important;
+  min-height: 430px;
+  max-height: 640px;
+}
 
 .chart-hint {
   margin-top: 8px;
@@ -462,6 +530,26 @@ kbd {
 #symbolBadge {
   font-size: 0.74rem;
   color: var(--muted);
+}
+
+.table-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn-toggle-log {
+  border: 1px solid #2e4564;
+  background: #172437;
+  color: #b9d2f4;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.btn-toggle-log:hover {
+  background: #1f314b;
 }
 
 .table-scroll {
@@ -575,5 +663,56 @@ code {
 
 @media (max-width: 980px) {
   .app-layout { grid-template-columns: 1fr; }
-  .side-column { order: -1; }
+  .side-column {
+    order: -1;
+    position: static;
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
+  }
+
+  #priceChart {
+    height: 50vh !important;
+    min-height: 350px;
+  }
+}
+
+@media (max-width: 640px) {
+  body { padding: 12px; }
+
+  .side-column .fetch-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .side-column #symbolInput,
+  .side-column .fetch-bar select,
+  .side-column .btn-refresh,
+  .side-column .auto-wrap {
+    width: 100%;
+  }
+
+  .side-column .st-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .advanced-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .side-column .ctrl-pill,
+  .side-column .checkbox-pill {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .chart-hint {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  #priceChart {
+    height: 44vh !important;
+    min-height: 280px;
+  }
 }

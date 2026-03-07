@@ -24,80 +24,6 @@
 
   <div class="app-layout">
     <main class="main-column">
-      <section class="panel">
-        <div class="fetch-bar">
-          <input type="text" id="symbolInput" value="BTC-USD" placeholder="BTC-USD" title="Yahoo Finance ticker">
-          <select id="intervalSelect">
-            <option value="1m">1 Minute</option>
-            <option value="5m" selected>5 Minutes</option>
-            <option value="15m">15 Minutes</option>
-            <option value="30m">30 Minutes</option>
-            <option value="1d">1 Day</option>
-          </select>
-          <button class="btn btn-refresh" id="refreshBtn" disabled>Refresh</button>
-          <div class="auto-wrap">
-            <label class="toggle">
-              <input type="checkbox" id="autoRefresh">
-              <span class="slider"></span>
-            </label>
-            Auto-refresh <span id="countdownText"></span>
-          </div>
-        </div>
-        <p class="helper-note">Tip: Click any ticker on the right panel to fetch and run instantly. You can also press <kbd>Enter</kbd> in the symbol box.</p>
-      </section>
-
-      <section class="panel">
-        <h2 class="panel-title">Indicators</h2>
-        <div class="st-controls">
-          <div class="ctrl-pill">
-            <label>ATR Period <span class="help" data-tip="How many candles to measure volatility. Example: 10 means use the last 10 candles.">?</span></label>
-            <input type="number" id="atrPeriod" value="10" min="1" max="100">
-          </div>
-          <div class="ctrl-pill">
-            <label>Multiplier <span class="help" data-tip="How far the SuperTrend line sits from price. Example: 3.0 = wider bands, fewer signals.">?</span></label>
-            <input type="number" id="multiplier" value="3.0" step="0.1" min="0.1">
-          </div>
-          <div class="ctrl-pill">
-            <label>ATR Method <span class="help" data-tip="RMA is smoother (Wilder style). SMA reacts faster but can be noisier.">?</span></label>
-            <select id="atrMethod">
-              <option value="rma">Wilder RMA</option>
-              <option value="sma">SMA</option>
-            </select>
-          </div>
-          <div class="ctrl-pill">
-            <label>Confirm Bars <span class="help" data-tip="Signal appears only after this many candles agree. Example: 5 means wait 5 candles before Buy/Sell.">?</span></label>
-            <input type="number" id="confirmBars" value="5" min="1" max="50">
-          </div>
-        </div>
-      </section>
-
-      <section class="panel">
-        <h2 class="panel-title">Filters</h2>
-        <div class="st-controls">
-          <div class="ctrl-pill">
-            <label>Range</label>
-            <select id="rangeFilter">
-              <option value="all" selected>All</option>
-              <option value="last-day">Last Day</option>
-              <option value="last-24h">Last 24 Hours</option>
-            </select>
-          </div>
-          <label class="ctrl-pill checkbox-pill"><input type="checkbox" id="showSignals" checked> Show Signals</label>
-          <label class="ctrl-pill checkbox-pill"><input type="checkbox" id="highlighting" checked> Highlight Trend</label>
-          <label class="ctrl-pill checkbox-pill"><input type="checkbox" id="smcEnabled" checked> Smart Money</label>
-          <label class="ctrl-pill checkbox-pill"><input type="checkbox" id="smcBosChoch" checked> BOS / CHoCH</label>
-          <label class="ctrl-pill checkbox-pill"><input type="checkbox" id="smcOrderBlocks" checked> Order Blocks</label>
-          <div class="ctrl-pill">
-            <label>OB Count</label>
-            <input type="number" id="smcOBCount" value="5" min="1" max="20">
-          </div>
-          <div class="ctrl-pill">
-            <label>Swing Len</label>
-            <input type="number" id="smcSwingLen" value="5" min="2" max="50">
-          </div>
-        </div>
-      </section>
-
       <div class="status-row" id="statusRow" style="display:none">
         <span class="dot" id="statusDot"></span>
         <span class="status-text" id="statusText"></span>
@@ -147,9 +73,12 @@
       <div class="table-wrap" id="tableWrap" style="display:none">
         <div class="table-header">
           <h3>Signal Log</h3>
-          <span id="symbolBadge"></span>
+          <div class="table-actions">
+            <span id="symbolBadge"></span>
+            <button class="btn-toggle-log" id="toggleSignalLogBtn" type="button">Show</button>
+          </div>
         </div>
-        <div class="table-scroll">
+        <div class="table-scroll" id="tableScroll" style="display:none">
           <table>
             <thead>
               <tr>
@@ -169,6 +98,80 @@
 
     <aside class="side-column">
       <section class="panel">
+        <h2 class="panel-title">Select + Indicators + Filters</h2>
+        <div class="fetch-bar">
+          <input type="text" id="symbolInput" value="BTC-USD" placeholder="BTC-USD" title="Yahoo Finance ticker">
+          <select id="intervalSelect">
+            <option value="1m">1 Minute</option>
+            <option value="5m" selected>5 Minutes</option>
+            <option value="15m">15 Minutes</option>
+            <option value="30m">30 Minutes</option>
+            <option value="1d">1 Day</option>
+          </select>
+          <button class="btn btn-refresh" id="refreshBtn" disabled>Refresh</button>
+          <div class="auto-wrap">
+            <label class="toggle">
+              <input type="checkbox" id="autoRefresh">
+              <span class="slider"></span>
+            </label>
+            Auto-refresh <span id="countdownText"></span>
+          </div>
+        </div>
+
+        <p class="helper-note">Tip: Press <kbd>Enter</kbd> in symbol, or click a ticker below to run instantly.</p>
+
+        <div class="st-controls">
+          <div class="ctrl-pill">
+            <label>ATR Period <span class="help" data-tip="How many candles to measure volatility. Example: 10 means use the last 10 candles.">?</span></label>
+            <input type="number" id="atrPeriod" value="10" min="1" max="100">
+          </div>
+          <div class="ctrl-pill">
+            <label>Multiplier <span class="help" data-tip="How far the SuperTrend line sits from price. Example: 3.0 = wider bands, fewer signals.">?</span></label>
+            <input type="number" id="multiplier" value="3.0" step="0.1" min="0.1">
+          </div>
+          <div class="ctrl-pill">
+            <label>ATR Method <span class="help" data-tip="RMA is smoother (Wilder style). SMA reacts faster but can be noisier.">?</span></label>
+            <select id="atrMethod">
+              <option value="rma">Wilder RMA</option>
+              <option value="sma">SMA</option>
+            </select>
+          </div>
+          <div class="ctrl-pill">
+            <label>Confirm Bars <span class="help" data-tip="Signal appears only after this many candles agree. Example: 5 means wait 5 candles before Buy/Sell.">?</span></label>
+            <input type="number" id="confirmBars" value="5" min="1" max="50">
+          </div>
+
+          <div class="ctrl-pill">
+            <label>Range</label>
+            <select id="rangeFilter">
+              <option value="all" selected>All</option>
+              <option value="last-day">Last Day</option>
+              <option value="last-24h">Last 24 Hours</option>
+            </select>
+          </div>
+          <label class="ctrl-pill checkbox-pill"><input type="checkbox" id="showSignals" checked> Show Signals</label>
+          <label class="ctrl-pill checkbox-pill"><input type="checkbox" id="highlighting" checked> Highlight Trend</label>
+
+          <details class="advanced-controls">
+            <summary>Advanced (SMC Overlays)</summary>
+            <div class="advanced-grid">
+              <label class="ctrl-pill checkbox-pill"><input type="checkbox" id="smcEnabled" checked> Smart Money</label>
+              <label class="ctrl-pill checkbox-pill"><input type="checkbox" id="smcBosChoch" checked> BOS / CHoCH</label>
+              <label class="ctrl-pill checkbox-pill"><input type="checkbox" id="smcOrderBlocks" checked> Order Blocks</label>
+              <div class="ctrl-pill">
+                <label>OB Count</label>
+                <input type="number" id="smcOBCount" value="5" min="1" max="20">
+              </div>
+              <div class="ctrl-pill">
+                <label>Swing Len</label>
+                <input type="number" id="smcSwingLen" value="5" min="2" max="50">
+              </div>
+            </div>
+          </details>
+        </div>
+      </section>
+
+      <section class="panel">
         <h2 class="panel-title">Quick Tickers</h2>
         <div id="predefinedTickerList" class="ticker-grid"></div>
       </section>
@@ -184,7 +187,7 @@
 
       <section class="panel">
         <h2 class="panel-title">Indicator Help</h2>
-        <details open>
+        <details>
           <summary>Simple guide for beginners</summary>
           <ul class="help-list">
             <li><strong>ATR Period:</strong> how many candles are used to measure volatility. Example: 10.</li>

@@ -42,12 +42,22 @@ def get_ohlcv():
 
         records = []
         for _, row in df.iterrows():
+            open_v = round(float(row["Open"]), 4)
+            high_v = round(float(row["High"]), 4)
+            low_v = round(float(row["Low"]), 4)
+            close_v = round(float(row["Close"]), 4)
+
+            # Yahoo occasionally returns placeholder intraday rows with OHLC all zero.
+            # Skip them to avoid chart drops to zero.
+            if open_v == 0 and high_v == 0 and low_v == 0 and close_v == 0:
+                continue
+
             records.append({
                 "date":   str(row[date_col])[:16],   # "2024-01-01 09:30"
-                "open":   round(float(row["Open"]),  4),
-                "high":   round(float(row["High"]),  4),
-                "low":    round(float(row["Low"]),   4),
-                "close":  round(float(row["Close"]), 4),
+                "open":   open_v,
+                "high":   high_v,
+                "low":    low_v,
+                "close":  close_v,
                 "volume": int(row.get("Volume", 0) or 0),
             })
 
