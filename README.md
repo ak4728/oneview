@@ -1,5 +1,8 @@
 # OneView — Live Intraday (Flask + Node API)
 
+<img width="1886" height="891" alt="image" src="https://github.com/user-attachments/assets/c3827e1e-1877-4780-bb0d-0c04e2c27688" />
+
+
 ## Quick Start (Flask)
 ```bash
 python -m venv .venv
