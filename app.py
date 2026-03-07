@@ -11,6 +11,14 @@ CORS(app)
 def index():
     return send_from_directory("", "index.html")
 
+@app.route("/styles.css")
+def styles():
+    return send_from_directory("", "styles.css")
+
+@app.route("/main.js")
+def script_main():
+    return send_from_directory("", "main.js")
+
 @app.route("/api/ohlcv")
 def get_ohlcv():
     symbol   = request.args.get("symbol", "BTC-USD").upper()

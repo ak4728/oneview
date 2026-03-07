@@ -7,10 +7,44 @@ const yahooFinance = new YahooFinance()
 const app = express()
 app.use(cors())
 app.use(express.json())
+app.use(express.static(path.resolve(__dirname, '..', '..')))
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok' })
 })
+
+function periodToDateRange(period: string): { start: Date; end: Date } {
+  const end = new Date()
+  const start = new Date()
+  const match = /^([0-9]+)([dDwWmMyY])$/.exec(period)
+
+  if (!match) {
+    start.setDate(end.getDate() - 7)
+    return { start, end }
+  }
+
+  const n = parseInt(match[1], 10)
+  const unit = match[2].toLowerCase()
+
+  switch (unit) {
+    case 'd':
+      start.setDate(end.getDate() - n)
+      break
+    case 'w':
+      start.setDate(end.getDate() - n * 7)
+      break
+    case 'm':
+      start.setMonth(end.getMonth() - n)
+      break
+    case 'y':
+      start.setFullYear(end.getFullYear() - n)
+      break
+    default:
+      start.setDate(end.getDate() - 7)
+  }
+
+  return { start, end }
+}
 
 app.get('/api/ohlcv', async (req, res) => {
   const symbol = (req.query.symbol as string || 'BTC-USD').toUpperCase()
@@ -20,9 +54,21 @@ app.get('/api/ohlcv', async (req, res) => {
   const period = '7d'
 
   try {
-    const options = { period, interval }
-    // yahoo-finance2 returns an array of historical quotes
-    const result = await yahooFinance.historical(symbol, options as any)
+      // Decide between intraday (minute) and historical endpoints
+      let result: any[]
+      const { start, end } = periodToDateRange(period)
+      const minuteInterval = /\d+m$/.test(interval)
+      if (minuteInterval) {
+        // Use chart endpoint for intraday data: provide explicit period1/period2
+        const chartOptions = { period1: start.toISOString(), period2: end.toISOString(), interval }
+        const chart = await (yahooFinance as any).chart(symbol, chartOptions)
+        // yahoo-finance2 v3 chart() returns normalized rows in `quotes`
+        result = Array.isArray(chart?.quotes) ? chart.quotes : []
+      } else {
+        // For daily/weekly/monthly data, pass explicit period1/period2 to historical
+        const histOptions = { period1: start.toISOString(), period2: end.toISOString(), interval }
+        result = await (yahooFinance as any).historical(symbol, histOptions)
+      }
 
     if (!result || (Array.isArray(result) && result.length === 0)) {
       return res.status(404).json({ error: `No data found for '${symbol}'. Try: BTC-USD, AAPL, EURUSD=X` })

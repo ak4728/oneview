@@ -1,1098 +1,204 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>OneView — Live Intraday</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-zoom/2.0.1/chartjs-plugin-zoom.min.js"></script>
-<style>
-  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600;700&family=Syne:wght@400;700;800&display=swap');
-
-  :root {
-    --bg: #0a0c10;
-    --surface: #10141c;
-    --border: #1e2535;
-    --text: #c8d4e8;
-    --muted: #4a5568;
-    --green: #00e676;
-    --red: #ff1744;
-    --green-dim: rgba(0,230,118,0.10);
-    --red-dim: rgba(255,23,68,0.10);
-    --accent: #3d8ef8;
-    --yellow: #ffd600;
-  }
-
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: 'JetBrains Mono', monospace;
-    min-height: 100vh;
-    padding: 20px 24px;
-  }
-
-  /* ── Header ── */
-  header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 20px;
-    padding-bottom: 14px;
-    border-bottom: 1px solid var(--border);
-    flex-wrap: wrap;
-    gap: 10px;
-  }
-
-  .logo { display: flex; align-items: baseline; gap: 12px; }
-  .logo h1 {
-    font-family: 'Syne', sans-serif;
-    font-weight: 800;
-    font-size: 1.5rem;
-    letter-spacing: -0.03em;
-    color: #fff;
-  }
-  .logo span { font-size: 0.65rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; }
-
-  .price-display { text-align: right; }
-  .price-display .price {
-    font-family: 'Syne', sans-serif;
-    font-size: 1.6rem;
-    font-weight: 800;
-    color: #fff;
-    line-height: 1;
-  }
-  .price-display .price-meta { font-size: 0.68rem; color: var(--muted); margin-top: 2px; }
-
-  /* ── Fetch Bar ── */
-  .fetch-bar {
-    display: flex;
-    gap: 10px;
-    margin-bottom: 16px;
-    flex-wrap: wrap;
-    align-items: stretch;
-  }
-
-  .fetch-bar input, .fetch-bar select {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    color: var(--text);
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.82rem;
-    padding: 8px 12px;
-    outline: none;
-    transition: border-color 0.2s;
-  }
-  .fetch-bar input:focus, .fetch-bar select:focus { border-color: var(--accent); }
-  .fetch-bar input { width: 140px; text-transform: uppercase; }
-
-  .btn {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.75rem;
-    font-weight: 700;
-    padding: 8px 18px;
-    border-radius: 6px;
-    border: none;
-    cursor: pointer;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    transition: opacity 0.15s, transform 0.1s;
-    white-space: nowrap;
-  }
-  .btn:hover { opacity: 0.85; }
-  .btn:active { transform: scale(0.97); }
-  .btn-primary { background: var(--accent); color: #fff; }
-  .btn-refresh { background: var(--surface); color: var(--green); border: 1px solid rgba(0,230,118,0.3); }
-  .btn-refresh:disabled { opacity: 0.4; cursor: not-allowed; }
-
-  /* auto-refresh toggle */
-  .auto-wrap {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 0 12px;
-    font-size: 0.7rem;
-    color: var(--muted);
-    white-space: nowrap;
-  }
-  .toggle { position: relative; width: 32px; height: 18px; flex-shrink: 0; }
-  .toggle input { opacity: 0; width: 0; height: 0; }
-  .slider { position: absolute; inset: 0; background: var(--border); border-radius: 20px; cursor: pointer; transition: background 0.2s; }
-  .slider:before { content: ''; position: absolute; width: 12px; height: 12px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: transform 0.2s; }
-  .toggle input:checked + .slider { background: var(--green); }
-  .toggle input:checked + .slider:before { transform: translateX(14px); }
-
-  /* ── Status ── */
-  .status-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 14px;
-    flex-wrap: wrap;
-  }
-  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 6px var(--green); animation: pulse 2s infinite; }
-  .dot.loading { background: var(--yellow); box-shadow: 0 0 6px var(--yellow); }
-  .dot.error { background: var(--red); box-shadow: 0 0 6px var(--red); animation: none; }
-  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
-  .status-text { font-size: 0.7rem; color: var(--muted); }
-
-  .trend-badge {
-    display: inline-flex; align-items: center; gap: 5px;
-    font-size: 0.68rem; font-weight: 700; padding: 3px 10px;
-    border-radius: 20px; text-transform: uppercase; letter-spacing: 0.05em;
-    margin-left: auto;
-  }
-  .trend-up   { background: var(--green-dim); color: var(--green); border: 1px solid rgba(0,230,118,0.3); }
-  .trend-down { background: var(--red-dim);   color: var(--red);   border: 1px solid rgba(255,23,68,0.3); }
-
-  /* ── SuperTrend Controls ── */
-  .st-controls {
-    display: flex;
-    gap: 10px;
-    margin-bottom: 14px;
-    flex-wrap: wrap;
-    align-items: center;
-  }
-
-  .ctrl-pill {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 7px 12px;
-    font-size: 0.7rem;
-  }
-  .ctrl-pill label { color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; white-space: nowrap; }
-  .ctrl-pill input[type="number"] {
-    width: 64px;
-    background: transparent;
-    border: none;
-    border-bottom: 1px solid var(--border);
-    color: var(--text);
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.82rem;
-    padding: 2px 4px;
-    outline: none;
-  }
-
-  .ctrl-pill.toggle-pill { cursor: pointer; user-select: none; }
-
-  /* ── Chart ── */
-  .chart-wrap {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 14px;
-    margin-bottom: 16px;
-    position: relative;
-  }
-  #loading-overlay {
-    display: none;
-    position: absolute; inset: 0;
-    background: rgba(10,12,16,0.75);
-    border-radius: 8px;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.8rem;
-    color: var(--muted);
-    z-index: 10;
-    flex-direction: column;
-    gap: 12px;
-  }
-  .spinner {
-    width: 28px; height: 28px;
-    border: 2px solid var(--border);
-    border-top-color: var(--accent);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
-
-  #priceChart { max-height: 400px; }
-  .chart-hint { font-size: 0.65rem; color: var(--muted); margin-top: 8px; display: flex; justify-content: space-between; align-items: center; }
-  .btn-reset-zoom { font-family: "JetBrains Mono", monospace; font-size: 0.65rem; background: var(--border); color: var(--muted); border: none; border-radius: 4px; padding: 3px 10px; cursor: pointer; }
-  .btn-reset-zoom:hover { color: var(--text); }
-
-  /* ── Summary Cards ── */
-  .cards {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 10px;
-    margin-bottom: 16px;
-  }
-  .card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 14px;
-  }
-  .card.buy  { border-color: rgba(0,230,118,0.3); background: var(--green-dim); }
-  .card.sell { border-color: rgba(255,23,68,0.3);  background: var(--red-dim); }
-  .card-label { font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin-bottom: 6px; }
-  .card-value { font-family: 'Syne', sans-serif; font-size: 1.9rem; font-weight: 800; line-height: 1; }
-  .card.buy  .card-value { color: var(--green); }
-  .card.sell .card-value { color: var(--red); }
-  .card-sub { font-size: 0.66rem; color: var(--muted); margin-top: 5px; }
-
-  /* ── Signal Table ── */
-  .table-wrap {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    overflow: hidden;
-  }
-  .table-header {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 10px 16px;
-    border-bottom: 1px solid var(--border);
-  }
-  .table-header h3 { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
-  .table-scroll { overflow-x: auto; max-height: 320px; overflow-y: auto; }
-  table { width: 100%; border-collapse: collapse; }
-  th { font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); padding: 8px 14px; text-align: left; border-bottom: 1px solid var(--border); background: var(--bg); position: sticky; top: 0; z-index: 1; }
-  td { font-size: 0.76rem; padding: 8px 14px; border-bottom: 1px solid var(--border); }
-  tr:last-child td { border-bottom: none; }
-  tr:hover td { background: rgba(255,255,255,0.02); }
-  .tag { display: inline-block; font-size: 0.62rem; font-weight: 700; padding: 2px 7px; border-radius: 3px; text-transform: uppercase; letter-spacing: 0.05em; }
-  .tag.buy  { background: var(--green-dim); color: var(--green); }
-  .tag.sell { background: var(--red-dim);   color: var(--red); }
-
-  #empty-state { text-align: center; padding: 60px 20px; color: var(--muted); font-size: 0.78rem; line-height: 2; }
-
-  @media (max-width: 600px) {
-    .fetch-bar input { width: 110px; }
-    header { flex-direction: column; align-items: flex-start; }
-  }
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OneView — Live Intraday</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-zoom/2.0.1/chartjs-plugin-zoom.min.js"></script>
+  <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
+  <header>
+    <div class="logo">
+      <h1>OneView</h1>
+      <span>Live Intraday</span>
+      <span class="version-pill">v1.9.0</span>
+    </div>
+    <div class="price-display" id="priceDisplay" style="display:none">
+      <div class="price" id="livePrice">—</div>
+      <div class="price-meta" id="livePriceMeta">—</div>
+    </div>
+  </header>
 
-<header>
-  <div class="logo">
-    <h1>OneView</h1>
-    <span>Live Intraday</span>
-    <span style="font-size:0.6rem;color:#2a3548;background:#13181f;border:1px solid #1e2535;border-radius:4px;padding:2px 7px;margin-left:4px;letter-spacing:0.08em;">v1.8.0</span>
+  <div class="app-layout">
+    <main class="main-column">
+      <section class="panel">
+        <div class="fetch-bar">
+          <input type="text" id="symbolInput" value="BTC-USD" placeholder="BTC-USD" title="Yahoo Finance ticker">
+          <select id="intervalSelect">
+            <option value="1m">1 Minute</option>
+            <option value="5m" selected>5 Minutes</option>
+            <option value="15m">15 Minutes</option>
+            <option value="30m">30 Minutes</option>
+            <option value="1d">1 Day</option>
+          </select>
+          <button class="btn btn-refresh" id="refreshBtn" disabled>Refresh</button>
+          <div class="auto-wrap">
+            <label class="toggle">
+              <input type="checkbox" id="autoRefresh">
+              <span class="slider"></span>
+            </label>
+            Auto-refresh <span id="countdownText"></span>
+          </div>
+        </div>
+        <p class="helper-note">Tip: Click any ticker on the right panel to fetch and run instantly. You can also press <kbd>Enter</kbd> in the symbol box.</p>
+      </section>
+
+      <section class="panel">
+        <h2 class="panel-title">Indicators</h2>
+        <div class="st-controls">
+          <div class="ctrl-pill">
+            <label>ATR Period <span class="help" data-tip="How many candles to measure volatility. Example: 10 means use the last 10 candles.">?</span></label>
+            <input type="number" id="atrPeriod" value="10" min="1" max="100">
+          </div>
+          <div class="ctrl-pill">
+            <label>Multiplier <span class="help" data-tip="How far the SuperTrend line sits from price. Example: 3.0 = wider bands, fewer signals.">?</span></label>
+            <input type="number" id="multiplier" value="3.0" step="0.1" min="0.1">
+          </div>
+          <div class="ctrl-pill">
+            <label>ATR Method <span class="help" data-tip="RMA is smoother (Wilder style). SMA reacts faster but can be noisier.">?</span></label>
+            <select id="atrMethod">
+              <option value="rma">Wilder RMA</option>
+              <option value="sma">SMA</option>
+            </select>
+          </div>
+          <div class="ctrl-pill">
+            <label>Confirm Bars <span class="help" data-tip="Signal appears only after this many candles agree. Example: 5 means wait 5 candles before Buy/Sell.">?</span></label>
+            <input type="number" id="confirmBars" value="5" min="1" max="50">
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2 class="panel-title">Filters</h2>
+        <div class="st-controls">
+          <div class="ctrl-pill">
+            <label>Range</label>
+            <select id="rangeFilter">
+              <option value="all" selected>All</option>
+              <option value="last-day">Last Day</option>
+              <option value="last-24h">Last 24 Hours</option>
+            </select>
+          </div>
+          <label class="ctrl-pill checkbox-pill"><input type="checkbox" id="showSignals" checked> Show Signals</label>
+          <label class="ctrl-pill checkbox-pill"><input type="checkbox" id="highlighting" checked> Highlight Trend</label>
+          <label class="ctrl-pill checkbox-pill"><input type="checkbox" id="smcEnabled" checked> Smart Money</label>
+          <label class="ctrl-pill checkbox-pill"><input type="checkbox" id="smcBosChoch" checked> BOS / CHoCH</label>
+          <label class="ctrl-pill checkbox-pill"><input type="checkbox" id="smcOrderBlocks" checked> Order Blocks</label>
+          <div class="ctrl-pill">
+            <label>OB Count</label>
+            <input type="number" id="smcOBCount" value="5" min="1" max="20">
+          </div>
+          <div class="ctrl-pill">
+            <label>Swing Len</label>
+            <input type="number" id="smcSwingLen" value="5" min="2" max="50">
+          </div>
+        </div>
+      </section>
+
+      <div class="status-row" id="statusRow" style="display:none">
+        <span class="dot" id="statusDot"></span>
+        <span class="status-text" id="statusText"></span>
+        <span class="trend-badge" id="trendBadge" style="display:none"></span>
+      </div>
+
+      <div class="chart-wrap" id="chartWrap" style="display:none">
+        <div id="loading-overlay">
+          <div class="spinner"></div>
+          <span>Fetching data...</span>
+        </div>
+        <canvas id="priceChart"></canvas>
+        <div class="chart-hint">
+          <span>Scroll to zoom · Drag to pan · Double-click to reset</span>
+          <button class="btn-reset-zoom" id="resetZoomBtn">Reset Zoom</button>
+        </div>
+      </div>
+
+      <div class="cards" id="cardsRow" style="display:none">
+        <div class="card buy">
+          <div class="card-label">Buy Signals</div>
+          <div class="card-value" id="buyCount">0</div>
+          <div class="card-sub" id="lastBuy">—</div>
+        </div>
+        <div class="card sell">
+          <div class="card-label">Sell Signals</div>
+          <div class="card-value" id="sellCount">0</div>
+          <div class="card-sub" id="lastSell">—</div>
+        </div>
+        <div class="card">
+          <div class="card-label">Candles</div>
+          <div class="card-value" id="candleCount">0</div>
+          <div class="card-sub" id="dataRange">—</div>
+        </div>
+        <div class="card">
+          <div class="card-label">Last Close</div>
+          <div class="card-value small" id="lastClose">—</div>
+          <div class="card-sub" id="lastCloseTime">—</div>
+        </div>
+      </div>
+
+      <div id="empty-state">
+        Select a ticker on the right to run analysis.<br>
+        Examples: <code>BTC-USD</code> · <code>AAPL</code> · <code>EURUSD=X</code>
+      </div>
+
+      <div class="table-wrap" id="tableWrap" style="display:none">
+        <div class="table-header">
+          <h3>Signal Log</h3>
+          <span id="symbolBadge"></span>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Confirmed At</th>
+                <th>Signal</th>
+                <th>Close</th>
+                <th>SuperTrend</th>
+                <th>Flip Started</th>
+              </tr>
+            </thead>
+            <tbody id="signalBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+
+    <aside class="side-column">
+      <section class="panel">
+        <h2 class="panel-title">Quick Tickers</h2>
+        <div id="predefinedTickerList" class="ticker-grid"></div>
+      </section>
+
+      <section class="panel">
+        <h2 class="panel-title">My Favorites</h2>
+        <div class="favorite-add-row">
+          <input type="text" id="favoriteInput" placeholder="Add ticker (e.g. MSFT)">
+          <button class="btn btn-small" id="addFavoriteBtn">Add</button>
+        </div>
+        <div id="favoriteTickerList" class="ticker-grid"></div>
+      </section>
+
+      <section class="panel">
+        <h2 class="panel-title">Indicator Help</h2>
+        <details open>
+          <summary>Simple guide for beginners</summary>
+          <ul class="help-list">
+            <li><strong>ATR Period:</strong> how many candles are used to measure volatility. Example: 10.</li>
+            <li><strong>Multiplier:</strong> how strict trend bands are. Example: 3.0 gives fewer but stronger signals.</li>
+            <li><strong>Confirm Bars:</strong> how long trend must stay before signaling. Example: 5 bars avoids noise.</li>
+            <li><strong>BOS:</strong> break of structure. Trend continuation signal.</li>
+            <li><strong>CHoCH:</strong> change of character. Possible trend reversal.</li>
+            <li><strong>Order Block:</strong> zone where larger players likely entered before a move.</li>
+          </ul>
+        </details>
+      </section>
+    </aside>
   </div>
-  <div style="display:flex;align-items:center;gap:10px;">
-    <button onclick="downloadHTML()" style="font-family:'JetBrains Mono',monospace;font-size:0.65rem;font-weight:700;padding:5px 12px;border-radius:5px;border:1px solid #1e2535;background:#10141c;color:#4a5568;cursor:pointer;text-transform:uppercase;letter-spacing:0.08em;transition:color 0.2s,border-color 0.2s;" onmouseover="this.style.color='#c8d4e8';this.style.borderColor='#3d8ef8'" onmouseout="this.style.color='#4a5568';this.style.borderColor='#1e2535'">⬇ Download</button>
-  </div>
-  <div class="price-display" id="priceDisplay" style="display:none">
-    <div class="price" id="livePrice">—</div>
-    <div class="price-meta" id="livePriceMeta">—</div>
-  </div>
-</header>
 
-<!-- Fetch Controls -->
-<div class="fetch-bar">
-  <input type="text" id="symbolInput" value="BTC-USD" placeholder="BTC-USD" title="Yahoo Finance ticker"/>
-  <select id="intervalSelect" onchange="autoConfirmBars(this.value)">
-    <option value="1m">1 Minute</option>
-    <option value="5m" selected>5 Minutes</option>
-    <option value="15m">15 Minutes</option>
-    <option value="30m">30 Minutes</option>
-  </select>
-  <button class="btn btn-primary" onclick="fetchAndRun()">▶ Fetch &amp; Run</button>
-  <button class="btn btn-refresh" id="refreshBtn" onclick="fetchAndRun()" disabled>⟳ Refresh</button>
-  <div class="auto-wrap">
-    <label class="toggle">
-      <input type="checkbox" id="lastDayOnly" onchange="fetchAndRun()">
-      <span class="slider"></span>
-    </label>
-    Last Day Only
-  </div>
-  <div class="auto-wrap">
-    <label class="toggle">
-      <input type="checkbox" id="autoRefresh" onchange="toggleAutoRefresh()">
-      <span class="slider"></span>
-    </label>
-    Auto-refresh <span id="countdownText"></span>
-  </div>
-</div>
-
-<!-- SuperTrend Parameters -->
-<div class="st-controls">
-  <div class="ctrl-pill">
-    <label>ATR Period</label>
-    <input type="number" id="atrPeriod" value="10" min="1" max="100">
-  </div>
-  <div class="ctrl-pill">
-    <label>Multiplier</label>
-    <input type="number" id="multiplier" value="3.0" step="0.1" min="0.1">
-  </div>
-  <div class="ctrl-pill">
-    <label>ATR Method</label>
-    <select id="atrMethod" style="background:transparent;border:none;border-bottom:1px solid var(--border);color:var(--text);font-family:'JetBrains Mono',monospace;font-size:0.82rem;outline:none;padding:2px 4px;">
-      <option value="rma">Wilder RMA</option>
-      <option value="sma">SMA</option>
-    </select>
-  </div>
-  <div class="ctrl-pill" title="Trend must hold this many consecutive candles before a signal is printed — eliminates whipsaw clusters. Recommended: 1m=10, 5m=5, 15m=4, 30m=3">
-    <label>Confirm Bars</label>
-    <input type="number" id="confirmBars" value="5" min="1" max="50">
-  </div>
-  <div class="ctrl-pill toggle-pill" onclick="toggleCheck('showSignals')">
-    <label class="toggle"><input type="checkbox" id="showSignals" checked><span class="slider"></span></label>
-    <label style="cursor:pointer">Signals</label>
-  </div>
-  <div class="ctrl-pill toggle-pill" onclick="toggleCheck('highlighting')">
-    <label class="toggle"><input type="checkbox" id="highlighting" checked><span class="slider"></span></label>
-    <label style="cursor:pointer">Highlight</label>
-  </div>
-</div>
-
-<!-- SMC Controls -->
-<div class="st-controls" style="border-top:1px solid var(--border);padding-top:10px;">
-  <span style="font-size:0.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.1em;padding:0 4px;">SMC</span>
-  <div class="ctrl-pill toggle-pill" onclick="toggleCheck('smcEnabled')">
-    <label class="toggle"><input type="checkbox" id="smcEnabled" checked onchange="rerender()"><span class="slider"></span></label>
-    <label style="cursor:pointer">Smart Money</label>
-  </div>
-  <div class="ctrl-pill toggle-pill" onclick="toggleCheck('smcBosChoch')">
-    <label class="toggle"><input type="checkbox" id="smcBosChoch" checked onchange="rerender()"><span class="slider"></span></label>
-    <label style="cursor:pointer">BOS / CHoCH</label>
-  </div>
-  <div class="ctrl-pill toggle-pill" onclick="toggleCheck('smcOrderBlocks')">
-    <label class="toggle"><input type="checkbox" id="smcOrderBlocks" checked onchange="rerender()"><span class="slider"></span></label>
-    <label style="cursor:pointer">Order Blocks</label>
-  </div>
-  <div class="ctrl-pill">
-    <label>OB Count</label>
-    <input type="number" id="smcOBCount" value="5" min="1" max="20" onchange="rerender()">
-  </div>
-  <div class="ctrl-pill">
-    <label>Swing Len</label>
-    <input type="number" id="smcSwingLen" value="5" min="2" max="50" onchange="rerender()">
-  </div>
-</div>
-
-<!-- Status Row -->
-<div class="status-row" id="statusRow" style="display:none">
-  <span class="dot" id="statusDot"></span>
-  <span class="status-text" id="statusText"></span>
-  <span class="trend-badge" id="trendBadge" style="display:none"></span>
-</div>
-
-<!-- Chart -->
-<div class="chart-wrap" id="chartWrap" style="display:none">
-  <div id="loading-overlay">
-    <div class="spinner"></div>
-    <span>Fetching data…</span>
-  </div>
-  <canvas id="priceChart"></canvas>
-  <div class="chart-hint">
-    <span>🖱 Scroll to zoom &nbsp;·&nbsp; Click &amp; drag to pan &nbsp;·&nbsp; Double-click to reset</span>
-    <button class="btn-reset-zoom" onclick="resetZoom()">Reset Zoom</button>
-  </div>
-</div>
-
-<!-- Summary Cards -->
-<div class="cards" id="cardsRow" style="display:none">
-  <div class="card buy">
-    <div class="card-label">Buy Signals</div>
-    <div class="card-value" id="buyCount">0</div>
-    <div class="card-sub" id="lastBuy">—</div>
-  </div>
-  <div class="card sell">
-    <div class="card-label">Sell Signals</div>
-    <div class="card-value" id="sellCount">0</div>
-    <div class="card-sub" id="lastSell">—</div>
-  </div>
-  <div class="card">
-    <div class="card-label">Candles</div>
-    <div class="card-value" id="candleCount" style="color:var(--accent)">0</div>
-    <div class="card-sub" id="dataRange">—</div>
-  </div>
-  <div class="card">
-    <div class="card-label">Last Close</div>
-    <div class="card-value" id="lastClose" style="color:#fff;font-size:1.3rem">—</div>
-    <div class="card-sub" id="lastCloseTime">—</div>
-  </div>
-</div>
-
-<!-- Empty state -->
-<div id="empty-state">
-  Enter a symbol above and click <strong>▶ Fetch &amp; Run</strong><br>
-  Crypto: <code>BTC-USD</code> &nbsp;·&nbsp; Stocks: <code>AAPL</code> &nbsp;·&nbsp; Forex: <code>EURUSD=X</code>
-</div>
-
-<!-- Signal Table -->
-<div class="table-wrap" id="tableWrap" style="display:none">
-  <div class="table-header">
-    <h3>📋 Signal Log</h3>
-    <span id="symbolBadge" style="font-size:0.68rem;color:var(--muted)"></span>
-  </div>
-  <div class="table-scroll">
-    <table>
-      <thead>
-        <tr>
-          <th>#</th>
-          <th>Confirmed At</th>
-          <th>Signal</th>
-          <th>Close</th>
-          <th>SuperTrend</th>
-          <th>Flip Started</th>
-        </tr>
-      </thead>
-      <tbody id="signalBody"></tbody>
-    </table>
-  </div>
-</div>
-
-<script>
-// ─── Config ────────────────────────────────────────────────────────────────
-// When deployed to Render, this will be the same origin.
-// For local dev, set to "http://localhost:5000"
-const API_BASE = "";
-
-let myChart = null;
-let autoTimer = null;
-let countdown = 0;
-let countdownInterval = null;
-let lastCandles = null;   // stored for SMC rerender without refetch
-let lastResult  = null;
-let lastSignals = null;
-
-// ─── Helpers ───────────────────────────────────────────────────────────────
-function toggleCheck(id) {
-  const el = document.getElementById(id);
-  el.checked = !el.checked;
-}
-
-function setStatus(msg, type = "ok") {
-  const row = document.getElementById("statusRow");
-  const dot = document.getElementById("statusDot");
-  row.style.display = "flex";
-  dot.className = "dot" + (type === "loading" ? " loading" : type === "error" ? " error" : "");
-  document.getElementById("statusText").textContent = msg;
-}
-
-function showLoading(show) {
-  const ov = document.getElementById("loading-overlay");
-  ov.style.display = show ? "flex" : "none";
-  document.getElementById("chartWrap").style.display = "block";
-}
-
-function rerender() {
-  if (!lastCandles) return;
-  const showSig = document.getElementById("showSignals").checked;
-  const smcData = calcSMC(lastCandles);
-  renderChart(lastCandles, lastResult, lastSignals, showSig, smcData);
-}
-
-// ─── SuperTrend Maths ──────────────────────────────────────────────────────
-function calcTR(c) {
-  return c.map((d, i) => {
-    if (i === 0) return d.high - d.low;
-    const p = c[i - 1];
-    return Math.max(d.high - d.low, Math.abs(d.high - p.close), Math.abs(d.low - p.close));
-  });
-}
-
-function calcRMA(vals, period) {
-  const r = new Array(vals.length).fill(NaN);
-  let sum = 0, cnt = 0;
-  for (let i = 0; i < vals.length; i++) {
-    if (isNaN(vals[i])) continue;
-    if (cnt < period) { sum += vals[i]; cnt++; if (cnt === period) r[i] = sum / period; }
-    else r[i] = (r[i - 1] * (period - 1) + vals[i]) / period;
-  }
-  return r;
-}
-
-function calcSMA(vals, period) {
-  const r = new Array(vals.length).fill(NaN);
-  for (let i = period - 1; i < vals.length; i++) {
-    let s = 0; for (let j = 0; j < period; j++) s += vals[i - j];
-    r[i] = s / period;
-  }
-  return r;
-}
-
-function calcSuperTrend(candles, period, mult, useRMA) {
-  const tr  = calcTR(candles);
-  const atr = useRMA ? calcRMA(tr, period) : calcSMA(tr, period);
-  const n   = candles.length;
-  const up  = new Array(n).fill(NaN);
-  const dn  = new Array(n).fill(NaN);
-  const trend = new Array(n).fill(1);
-
-  for (let i = 0; i < n; i++) {
-    if (isNaN(atr[i])) continue;
-    const hl2    = (candles[i].high + candles[i].low) / 2;
-    const rawUp  = hl2 - mult * atr[i];
-    const rawDn  = hl2 + mult * atr[i];
-    const prevUp = i > 0 && !isNaN(up[i-1]) ? up[i-1] : rawUp;
-    const prevDn = i > 0 && !isNaN(dn[i-1]) ? dn[i-1] : rawDn;
-    const pClose = i > 0 ? candles[i-1].close : candles[i].close;
-
-    up[i] = pClose > prevUp ? Math.max(rawUp, prevUp) : rawUp;
-    dn[i] = pClose < prevDn ? Math.min(rawDn, prevDn) : rawDn;
-
-    const pTrend = i > 0 ? trend[i-1] : 1;
-    if      (pTrend === -1 && candles[i].close > prevDn) trend[i] = 1;
-    else if (pTrend ===  1 && candles[i].close < prevUp) trend[i] = -1;
-    else trend[i] = pTrend;
-  }
-
-  const st = trend.map((t, i) => t === 1 ? up[i] : dn[i]);
-  return { up, dn, trend, st };
-}
-
-// ─── Fetch Data from Flask ─────────────────────────────────────────────────
-async function fetchData(symbol, interval) {
-  const url = `${API_BASE}/api/ohlcv?symbol=${encodeURIComponent(symbol)}&interval=${interval}`;
-  const res = await fetch(url);
-  const json = await res.json();
-  if (!res.ok) throw new Error(json.error || "API error");
-  return json;
-}
-
-// ─── Main ─────────────────────────────────────────────────────────────────
-async function fetchAndRun() {
-  const symbol   = document.getElementById("symbolInput").value.trim().toUpperCase() || "BTC-USD";
-  const interval = document.getElementById("intervalSelect").value;
-  const period   = parseInt(document.getElementById("atrPeriod").value)  || 10;
-  const mult     = parseFloat(document.getElementById("multiplier").value) || 3.0;
-  const useRMA   = document.getElementById("atrMethod").value === "rma";
-  const showSig  = document.getElementById("showSignals").checked;
-
-  document.getElementById("empty-state").style.display = "none";
-  document.getElementById("refreshBtn").disabled = true;
-  setStatus("Fetching data…", "loading");
-  showLoading(true);
-
-  try {
-    const json     = await fetchData(symbol, interval);
-    let candles = json.data;
-
-    // Last Day Only filter — keep only candles matching the most recent date
-    const lastDayOnly = document.getElementById("lastDayOnly").checked;
-    if (lastDayOnly && candles.length > 0) {
-      const lastDate = candles[candles.length - 1].date.slice(0, 10);
-      candles = candles.filter(c => c.date.slice(0, 10) === lastDate);
-    }
-
-    const result   = calcSuperTrend(candles, period, mult, useRMA);
-    const signals  = extractSignals(candles, result);
-
-    lastCandles = candles;
-    lastResult  = result;
-    lastSignals = signals;
-    const smcData = calcSMC(candles);
-    renderChart(candles, result, signals, showSig, smcData);
-    renderCards(candles, result, signals, json);
-    renderTable(signals, symbol, interval);
-    updatePriceDisplay(candles, json);
-
-    const lastTrendIdx = result.trend.findLastIndex(v => !isNaN(v));
-    const lastTrend    = result.trend[lastTrendIdx];
-    const badge = document.getElementById("trendBadge");
-    badge.style.display = "inline-flex";
-    badge.className = "trend-badge " + (lastTrend === 1 ? "trend-up" : "trend-down");
-    badge.textContent  = lastTrend === 1 ? "▲ Uptrend" : "▼ Downtrend";
-
-    setStatus(`${json.count} candles · ${symbol} · ${interval} · updated ${new Date().toLocaleTimeString()}`);
-    document.getElementById("refreshBtn").disabled = false;
-
-  } catch (err) {
-    setStatus("Error: " + err.message, "error");
-    showLoading(false);
-  }
-}
-
-function extractSignals(candles, result) {
-  const confirmBars = parseInt(document.getElementById("confirmBars").value) || 3;
-  const signals = [];
-  const n = candles.length;
-  let inFlip = false;
-  let flipDir = 0;
-  let flipBar = -1;
-  let consecutiveCount = 0;
-
-  for (let i = 1; i < n; i++) {
-    if (isNaN(result.trend[i]) || isNaN(result.trend[i - 1])) continue;
-
-    const trendChanged = result.trend[i] !== result.trend[i - 1];
-
-    if (trendChanged) {
-      inFlip = true;
-      flipDir = result.trend[i];
-      flipBar = i;
-      consecutiveCount = 1;
-    } else if (inFlip) {
-      if (result.trend[i] === flipDir) {
-        consecutiveCount++;
-        if (consecutiveCount >= confirmBars) {
-          signals.push({
-            i, flipBar,
-            type: flipDir === 1 ? "BUY" : "SELL",
-            date:      candles[i].date,
-            close:     candles[i].close,
-            st:        result.st[i],
-            flipDate:  candles[flipBar].date,
-            flipClose: candles[flipBar].close,
-          });
-          inFlip = false;
-        }
-      } else {
-        inFlip = true;
-        flipDir = result.trend[i];
-        flipBar = i;
-        consecutiveCount = 1;
-      }
-    }
-  }
-  return signals;
-}
-
-// ─── Smart Money Concepts Engine ──────────────────────────────────────────
-function calcSMC(candles) {
-  const n          = candles.length;
-  const swingLen   = parseInt(document.getElementById("smcSwingLen").value) || 5;
-  const obCount    = parseInt(document.getElementById("smcOBCount").value)  || 5;
-
-  // ── Swing highs / lows using pivot detection ──
-  // A swing high at i means candles[i].high is highest of [i-len .. i+len]
-  const swingHighs = []; // {i, price}
-  const swingLows  = []; // {i, price}
-
-  for (let i = swingLen; i < n - swingLen; i++) {
-    let isHigh = true, isLow = true;
-    for (let k = 1; k <= swingLen; k++) {
-      if (candles[i].high <= candles[i - k].high || candles[i].high <= candles[i + k].high) isHigh = false;
-      if (candles[i].low  >= candles[i - k].low  || candles[i].low  >= candles[i + k].low)  isLow  = false;
-    }
-    if (isHigh) swingHighs.push({ i, price: candles[i].high });
-    if (isLow)  swingLows.push({  i, price: candles[i].low  });
-  }
-
-  // ── BOS / CHoCH detection ──
-  // Track current swing structure bias; detect breaks
-  const structures = []; // {i, type:'BOS'|'CHoCH', bias:'bull'|'bear', level, fromI}
-
-  let lastSwingHigh = swingHighs[0] || null;
-  let lastSwingLow  = swingLows[0]  || null;
-  let structureBias = null; // 'bull' or 'bear'
-
-  // Walk through all swings in chronological order
-  const allSwings = [
-    ...swingHighs.map(s => ({ ...s, kind: 'high' })),
-    ...swingLows.map(s  => ({ ...s, kind: 'low'  })),
-  ].sort((a, b) => a.i - b.i);
-
-  let prevHigh = null, prevLow = null;
-
-  for (const swing of allSwings) {
-    if (swing.kind === 'high') {
-      // Check if close broke above previous swing high → bullish structure
-      for (let ci = (prevHigh ? prevHigh.i : 0) + 1; ci <= swing.i; ci++) {
-        if (prevHigh && candles[ci].close > prevHigh.price) {
-          const tag = structureBias === 'bear' ? 'CHoCH' : 'BOS';
-          structures.push({ i: ci, type: tag, bias: 'bull', level: prevHigh.price, fromI: prevHigh.i });
-          structureBias = 'bull';
-          break;
-        }
-      }
-      prevHigh = swing;
-    } else {
-      // Check if close broke below previous swing low → bearish structure
-      for (let ci = (prevLow ? prevLow.i : 0) + 1; ci <= swing.i; ci++) {
-        if (prevLow && candles[ci].close < prevLow.price) {
-          const tag = structureBias === 'bull' ? 'CHoCH' : 'BOS';
-          structures.push({ i: ci, type: tag, bias: 'bear', level: prevLow.price, fromI: prevLow.i });
-          structureBias = 'bear';
-          break;
-        }
-      }
-      prevLow = swing;
-    }
-  }
-
-  // ── Order Blocks ──
-  // Bullish OB: last bearish candle before a bullish BOS/CHoCH
-  // Bearish OB: last bullish candle before a bearish BOS/CHoCH
-  const orderBlocks = []; // {i, bias:'bull'|'bear', high, low, mitigated}
-
-  for (const s of structures) {
-    if (s.bias === 'bull') {
-      // Find last bearish candle before the structure break
-      for (let k = s.i - 1; k >= Math.max(0, s.fromI); k--) {
-        if (candles[k].close < candles[k].open) {
-          orderBlocks.push({ i: k, bias: 'bull', high: candles[k].high, low: candles[k].low, breakI: s.i });
-          break;
-        }
-      }
-    } else {
-      // Find last bullish candle before the structure break
-      for (let k = s.i - 1; k >= Math.max(0, s.fromI); k--) {
-        if (candles[k].close > candles[k].open) {
-          orderBlocks.push({ i: k, bias: 'bear', high: candles[k].high, low: candles[k].low, breakI: s.i });
-          break;
-        }
-      }
-    }
-  }
-
-  // Mark mitigated OBs (price returned into the OB zone after creation)
-  for (const ob of orderBlocks) {
-    ob.mitigated = false;
-    for (let ci = ob.breakI + 1; ci < n; ci++) {
-      if (ob.bias === 'bull' && candles[ci].low < ob.low) { ob.mitigated = true; ob.mitigatedI = ci; break; }
-      if (ob.bias === 'bear' && candles[ci].high > ob.high) { ob.mitigated = true; ob.mitigatedI = ci; break; }
-    }
-  }
-
-  // Keep only most recent unmitigated OBs up to obCount
-  const activeOBs = orderBlocks
-    .filter(ob => !ob.mitigated)
-    .slice(-obCount);
-
-  return { structures, orderBlocks: activeOBs, swingHighs, swingLows };
-}
-
-// ─── Chart ────────────────────────────────────────────────────────────────
-function renderChart(candles, result, signals, showSig, smcData = null) {
-  const labels  = candles.map(c => c.date);
-  const closes  = candles.map(c => c.close);
-  const highlighting = document.getElementById("highlighting").checked;
-
-  const stUp = result.st.map((v, i) => result.trend[i] ===  1 ? v : null);
-  const stDn = result.st.map((v, i) => result.trend[i] === -1 ? v : null);
-
-  const bgPlugin = {
-    id: "trendBg",
-    beforeDraw(chart) {
-      if (!highlighting) return;
-      const { ctx, chartArea: { left, right, top, bottom }, scales } = chart;
-      for (let i = 0; i < candles.length; i++) {
-        const x0 = scales.x.getPixelForValue(i);
-        const x1 = i + 1 < candles.length ? scales.x.getPixelForValue(i + 1) : right;
-        ctx.fillStyle = result.trend[i] === 1 ? "rgba(0,230,118,0.04)" : "rgba(255,23,68,0.04)";
-        ctx.fillRect(x0, top, x1 - x0, bottom - top);
-      }
-    }
-  };
-
-  const datasets = [
-    { label: "Close", data: closes, borderColor: "#c8d4e8", borderWidth: 1.5, pointRadius: 0, tension: 0, order: 3 },
-    { label: "ST ▲", data: stUp, borderColor: "#00e676", borderWidth: 2, pointRadius: 0, spanGaps: false, tension: 0, order: 2 },
-    { label: "ST ▼", data: stDn, borderColor: "#ff1744", borderWidth: 2, pointRadius: 0, spanGaps: false, tension: 0, order: 2 },
-  ];
-
-  if (showSig) {
-    // Build plain arrays aligned with candles (null = no signal at that index)
-    // This avoids {x,y} parsing issues on the category scale that caused arrows
-    // to cluster at the left edge of the chart.
-    const buyData  = new Array(candles.length).fill(null);
-    const sellData = new Array(candles.length).fill(null);
-    signals.forEach(s => {
-      if (s.type === "BUY")  buyData[s.i]  = s.close * 0.997;
-      if (s.type === "SELL") sellData[s.i] = s.close * 1.003;
-    });
-
-    datasets.push({
-      label: "BUY", showLine: false, order: 1,
-      data: buyData,
-      borderColor: "#00e676", backgroundColor: "#00e676",
-      pointStyle: "triangle", pointRadius: 9,
-    });
-    datasets.push({
-      label: "SELL", showLine: false, order: 1,
-      data: sellData,
-      borderColor: "#ff1744", backgroundColor: "#ff1744",
-      pointStyle: "triangle", pointRadius: 9, rotation: 180,
-    });
-  }
-
-  // Plugin to draw BUY / SELL text next to each signal triangle
-  const signalLabelsPlugin = {
-    id: "signalLabels",
-    afterDatasetsDraw(chart) {
-      if (!showSig) return;
-      const { ctx, scales } = chart;
-      ctx.save();
-      ctx.font = "bold 10px 'JetBrains Mono', monospace";
-      ctx.textBaseline = "middle";
-
-      signals.forEach(s => {
-        const xPos = scales.x.getPixelForValue(s.i);
-        const yVal = s.type === "BUY" ? s.close * 0.997 : s.close * 1.003;
-        const yPos = scales.y.getPixelForValue(yVal);
-        ctx.fillStyle = s.type === "BUY" ? "#00e676" : "#ff1744";
-        ctx.fillText(s.type === "BUY" ? "Buy" : "Sell", xPos + 10, yPos);
-      });
-
-      ctx.restore();
-    }
-  };
-
-  // ── SMC Overlay Plugin ────────────────────────────────────────────────
-  const smcPlugin = {
-    id: "smcOverlay",
-    afterDraw(chart) {
-      if (!smcData) return;
-      const showSMC = document.getElementById("smcEnabled").checked;
-      if (!showSMC) return;
-
-      const { ctx, chartArea: { left, right, top, bottom }, scales } = chart;
-      const showBosChoch    = document.getElementById("smcBosChoch").checked;
-      const showOB          = document.getElementById("smcOrderBlocks").checked;
-
-      ctx.save();
-
-      // ── Order Blocks ────────────────────────────────────────────────────
-      if (showOB && smcData.orderBlocks) {
-        for (const ob of smcData.orderBlocks) {
-          const x0   = scales.x.getPixelForValue(ob.i);
-          const xEnd = right;
-          const yHi  = scales.y.getPixelForValue(ob.high);
-          const yLo  = scales.y.getPixelForValue(ob.low);
-          const h    = Math.abs(yHi - yLo);
-
-          ctx.fillStyle   = ob.bias === 'bull'
-            ? 'rgba(33, 87, 243, 0.18)'
-            : 'rgba(242, 54, 69, 0.18)';
-          ctx.strokeStyle = ob.bias === 'bull'
-            ? 'rgba(33, 87, 243, 0.6)'
-            : 'rgba(242, 54, 69, 0.6)';
-          ctx.lineWidth   = 1;
-
-          ctx.fillRect(x0, yHi, xEnd - x0, h);
-          ctx.strokeRect(x0, yHi, xEnd - x0, h);
-
-          // OB label
-          ctx.fillStyle = ob.bias === 'bull' ? '#4d8af8' : '#f23645';
-          ctx.font      = 'bold 9px JetBrains Mono, monospace';
-          ctx.fillText(ob.bias === 'bull' ? 'Bull OB' : 'Bear OB', x0 + 4, yHi + 10);
-        }
-      }
-
-      // ── BOS / CHoCH Lines & Labels ──────────────────────────────────────
-      if (showBosChoch && smcData.structures) {
-        for (const s of smcData.structures) {
-          // Only draw recent structures (last 60% of candles to avoid clutter)
-          if (s.i < candles.length * 0.4) continue;
-
-          const xFrom = scales.x.getPixelForValue(s.fromI);
-          const xTo   = scales.x.getPixelForValue(s.i);
-          const yLvl  = scales.y.getPixelForValue(s.level);
-
-          if (yLvl < top || yLvl > bottom) continue;
-
-          const isBull  = s.bias === 'bull';
-          const isChoch = s.type === 'CHoCH';
-
-          // Color scheme:
-          // BOS  bull → green  #089981
-          // BOS  bear → red    #f23645
-          // CHoCH bull → blue  #2157f3
-          // CHoCH bear → orange #f5a623
-          let color;
-          if (isChoch) {
-            color = isBull ? '#2157f3' : '#f5a623';
-          } else {
-            color = isBull ? '#089981' : '#f23645';
-          }
-
-          // Line — solid for BOS, dashed for CHoCH
-          ctx.strokeStyle = color;
-          ctx.lineWidth   = 1.5;
-          ctx.setLineDash(isChoch ? [4, 3] : []);
-          ctx.beginPath();
-          ctx.moveTo(xFrom, yLvl);
-          ctx.lineTo(xTo,   yLvl);
-          ctx.stroke();
-          ctx.setLineDash([]);
-
-          // Label box
-          const tag     = s.type;
-          const padding = 3;
-          ctx.font      = 'bold 9px JetBrains Mono, monospace';
-          const tw      = ctx.measureText(tag).width;
-          const bx      = xTo - tw / 2 - padding;
-          const by      = isBull ? yLvl - 16 : yLvl + 2;
-          const bw      = tw + padding * 2;
-          const bh      = 13;
-
-          ctx.fillStyle = color;
-          ctx.beginPath();
-          ctx.roundRect(bx, by, bw, bh, 2);
-          ctx.fill();
-
-          ctx.fillStyle = '#fff';
-          ctx.textBaseline = 'top';
-          ctx.fillText(tag, bx + padding, by + 2);
-        }
-      }
-
-      ctx.restore();
-    }
-  };
-
-  if (myChart) myChart.destroy();
-  const ctx = document.getElementById("priceChart").getContext("2d");
-  myChart = new Chart(ctx, {
-    type: "line",
-    data: { labels, datasets },
-    options: {
-      responsive: true,
-      animation: { duration: 300 },
-      interaction: { mode: "index", intersect: false },
-      plugins: {
-        legend: { labels: { color: "#4a5568", font: { family: "JetBrains Mono", size: 10 }, boxWidth: 16 } },
-        tooltip: {
-          backgroundColor: "#10141c", borderColor: "#1e2535", borderWidth: 1,
-          titleColor: "#c8d4e8", bodyColor: "#4a5568",
-          titleFont: { family: "JetBrains Mono", size: 11 },
-          bodyFont:  { family: "JetBrains Mono", size: 11 },
-          callbacks: { label: c => c.parsed.y == null ? null : ` ${c.dataset.label}: ${c.parsed.y.toLocaleString(undefined,{maximumFractionDigits:4})}` }
-        },
-        zoom: {
-          zoom: {
-            wheel: { enabled: true },
-            pinch: { enabled: true },
-            mode: "x",
-          },
-          pan: {
-            enabled: true,
-            mode: "x",
-          },
-          limits: {
-            x: { minRange: 10 },
-          }
-        }
-      },
-      scales: {
-        x: { ticks: { color: "#4a5568", font: { family: "JetBrains Mono", size: 9 }, maxTicksLimit: 10, maxRotation: 0 }, grid: { color: "#1e2535" } },
-        y: { ticks: { color: "#4a5568", font: { family: "JetBrains Mono", size: 10 } }, grid: { color: "#1e2535" } }
-      }
-    },
-    plugins: [bgPlugin, signalLabelsPlugin, smcPlugin]
-  });
-
-  showLoading(false);
-  document.getElementById("chartWrap").style.display = "block";
-}
-
-// ─── Cards ────────────────────────────────────────────────────────────────
-function renderCards(candles, result, signals, json) {
-  const buys  = signals.filter(s => s.type === "BUY");
-  const sells = signals.filter(s => s.type === "SELL");
-  const last  = candles[candles.length - 1];
-
-  document.getElementById("buyCount").textContent  = buys.length;
-  document.getElementById("sellCount").textContent = sells.length;
-  document.getElementById("lastBuy").textContent   = buys.length  ? "Last: " + buys[buys.length-1].date   : "No buy signals";
-  document.getElementById("lastSell").textContent  = sells.length ? "Last: " + sells[sells.length-1].date : "No sell signals";
-  document.getElementById("candleCount").textContent = json.count;
-  document.getElementById("dataRange").textContent   = candles[0].date.slice(0,10) + " → " + last.date.slice(0,10);
-  document.getElementById("lastClose").textContent   = last.close.toLocaleString(undefined, {maximumFractionDigits: 4});
-  document.getElementById("lastCloseTime").textContent = last.date;
-
-  document.getElementById("cardsRow").style.display = "grid";
-}
-
-// ─── Price Display ────────────────────────────────────────────────────────
-function updatePriceDisplay(candles, json) {
-  const last = candles[candles.length - 1];
-  const prev = candles.length > 1 ? candles[candles.length - 2] : null;
-  const chg  = prev ? ((last.close - prev.close) / prev.close * 100) : 0;
-  const sym  = document.getElementById("symbolInput").value.trim().toUpperCase();
-
-  document.getElementById("livePrice").textContent =
-    last.close.toLocaleString(undefined, { maximumFractionDigits: 4 });
-  document.getElementById("livePriceMeta").textContent =
-    `${sym} · ${chg >= 0 ? "+" : ""}${chg.toFixed(2)}% · ${last.date}`;
-  document.getElementById("livePriceMeta").style.color = chg >= 0 ? "var(--green)" : "var(--red)";
-  document.getElementById("priceDisplay").style.display = "block";
-}
-
-// ─── Table ────────────────────────────────────────────────────────────────
-function renderTable(signals, symbol, interval) {
-  document.getElementById("symbolBadge").textContent = `${symbol} · ${interval}`;
-  const tbody = document.getElementById("signalBody");
-  if (!signals.length) {
-    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:20px">No signals in this window</td></tr>';
-  } else {
-    tbody.innerHTML = signals.slice().reverse().map((s, idx) => `
-      <tr>
-        <td style="color:var(--muted)">${signals.length - idx}</td>
-        <td>${s.date}</td>
-        <td><span class="tag ${s.type.toLowerCase()}">${s.type}</span></td>
-        <td>${s.close.toLocaleString(undefined,{maximumFractionDigits:4})}</td>
-        <td style="color:${s.type==="BUY"?"var(--green)":"var(--red)"}">${s.st.toLocaleString(undefined,{maximumFractionDigits:4})}</td>
-        <td style="color:var(--muted);font-size:0.68rem">${s.flipDate}</td>
-      </tr>
-    `).join("");
-  }
-  document.getElementById("tableWrap").style.display = "block";
-}
-
-// ─── Auto Confirm Bars ────────────────────────────────────────────────────
-// Suggested confirm bars per interval:
-// 1m  → 10 bars = 10 min confirmation
-// 5m  → 5  bars = 25 min confirmation
-// 15m → 4  bars = 60 min confirmation
-// 30m → 3  bars = 90 min confirmation
-const CONFIRM_DEFAULTS = { "1m": 10, "5m": 5, "15m": 4, "30m": 3 };
-
-function autoConfirmBars(interval) {
-  const el = document.getElementById("confirmBars");
-  el.value = CONFIRM_DEFAULTS[interval] || 5;
-  // flash the field to show it changed
-  el.style.color = "var(--accent)";
-  setTimeout(() => el.style.color = "", 800);
-}
-
-// ─── Download ─────────────────────────────────────────────────────────────
-function downloadHTML() {
-  const html = document.documentElement.outerHTML;
-  const blob = new Blob([html], { type: "text/html" });
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement("a");
-  a.href     = url;
-  a.download = "oneview-v1.8.0.html";
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-// ─── Zoom ─────────────────────────────────────────────────────────────────
-function resetZoom() {
-  if (myChart) myChart.resetZoom();
-}
-
-// ─── Auto-Refresh ─────────────────────────────────────────────────────────
-function toggleAutoRefresh() {
-  const on = document.getElementById("autoRefresh").checked;
-  clearInterval(autoTimer);
-  clearInterval(countdownInterval);
-  document.getElementById("countdownText").textContent = "";
-
-  if (on) {
-    const INTERVAL_SECS = 60;
-    countdown = INTERVAL_SECS;
-
-    const tick = () => {
-      countdown--;
-      document.getElementById("countdownText").textContent = `(${countdown}s)`;
-      if (countdown <= 0) {
-        countdown = INTERVAL_SECS;
-        fetchAndRun();
-      }
-    };
-
-    countdownInterval = setInterval(tick, 1000);
-    fetchAndRun();
-  }
-}
-</script>
+  <script src="/main.js"></script>
 </body>
 </html>
