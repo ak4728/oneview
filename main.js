@@ -579,6 +579,7 @@ function renderChart(candles, result, signals, showSig, smcData) {
     data: { labels, datasets },
     options: {
       responsive: true,
+      maintainAspectRatio: false,
       animation: { duration: 250 },
       interaction: { mode: "index", intersect: false },
       plugins: {
@@ -638,14 +639,20 @@ function renderCards(candles, signals, json) {
 
 function updatePriceDisplay(candles) {
   const last = candles[candles.length - 1];
-  const prev = candles.length > 1 ? candles[candles.length - 2] : null;
-  const chg = prev ? ((last.close - prev.close) / prev.close * 100) : 0;
+  const first = candles[0];
+  const chg = first ? ((last.close - first.close) / first.close * 100) : 0;
   const sym = $("symbolInput").value.trim().toUpperCase();
 
   $("livePrice").textContent = last.close.toLocaleString(undefined, { maximumFractionDigits: 4 });
-  $("livePriceMeta").textContent = `${sym} · ${chg >= 0 ? "+" : ""}${chg.toFixed(2)}% · ${formatLocalDateTime(last.date)}`;
-  $("livePriceMeta").style.color = chg >= 0 ? "var(--green)" : "var(--red)";
-  $("priceDisplay").style.display = "block";
+  $("livePriceMeta").textContent = sym + ' · ' + formatLocalDateTime(last.date);
+  $("livePriceMeta").style.color = 'var(--muted)';
+
+  const badge = $("chgBadge");
+  const up = chg >= 0;
+  badge.className = 'chg-badge ' + (up ? 'up' : 'down');
+  badge.textContent = (up ? '▲ +' : '▼ ') + chg.toFixed(2) + '%';
+
+  $("priceDisplay").style.display = 'block';
 }
 
 function renderTable(signals, symbol, interval) {

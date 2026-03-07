@@ -68,6 +68,37 @@ header {
 
 .price-display { text-align: right; }
 
+.price-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.chg-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: Manrope, sans-serif;
+  font-size: 0.85rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 20px;
+  letter-spacing: 0.01em;
+}
+
+.chg-badge.up {
+  background: rgba(45, 223, 132, 0.15);
+  color: #2ddf84;
+  border: 1px solid rgba(45, 223, 132, 0.3);
+}
+
+.chg-badge.down {
+  background: rgba(255, 90, 103, 0.15);
+  color: #ff5a67;
+  border: 1px solid rgba(255, 90, 103, 0.3);
+}
+
 .price-display .price {
   font-family: Manrope, sans-serif;
   font-size: 1.7rem;
@@ -84,12 +115,16 @@ header {
 
 .app-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
+  grid-template-columns: minmax(0, 1fr) 320px;
   gap: 14px;
 }
 
 .side-column .fetch-bar {
   margin-bottom: 8px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  align-items: stretch;
 }
 
 .side-column .st-controls {
@@ -109,6 +144,28 @@ header {
   max-height: calc(100vh - 22px);
   overflow-y: auto;
   padding-right: 4px;
+  font-size: 0.9rem;
+}
+
+.side-column .panel-title {
+  font-size: 0.68rem;
+}
+
+.side-column .helper-note,
+.side-column details summary,
+.side-column .ctrl-pill label,
+.side-column .auto-wrap {
+  font-size: 0.72rem;
+}
+
+.side-column .fetch-bar input,
+.side-column .fetch-bar select,
+.side-column .ctrl-pill input,
+.side-column .ctrl-pill select,
+.side-column .favorite-add-row input,
+.side-column .ticker-chip,
+.side-column .btn {
+  font-size: 0.8rem;
 }
 
 .panel {
@@ -153,8 +210,17 @@ header {
 }
 
 #symbolInput {
-  width: 150px;
+  width: 100%;
   text-transform: uppercase;
+}
+
+#intervalSelect,
+.btn-refresh {
+  width: 100%;
+}
+
+.side-column .auto-wrap {
+  grid-column: 1 / -1;
 }
 
 .btn {
@@ -265,8 +331,9 @@ kbd {
 
 .ctrl-pill {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
   gap: 8px;
   background: var(--surface-2);
   border: 1px solid var(--border);
@@ -278,12 +345,23 @@ kbd {
 
 .ctrl-pill label {
   color: var(--muted);
-  white-space: nowrap;
+  white-space: normal;
+  line-height: 1.35;
 }
 
-.ctrl-pill input[type="number"] { width: 72px; }
+.ctrl-pill input,
+.ctrl-pill select {
+  width: 100%;
+}
+
+.ctrl-pill input[type="number"] { min-height: 34px; }
+
+.ctrl-pill select { min-height: 34px; }
 
 .checkbox-pill {
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
   gap: 7px;
   cursor: pointer;
 }
@@ -401,6 +479,7 @@ kbd {
   border-radius: 10px;
   padding: 12px;
   position: relative;
+  min-height: 66vh;
 }
 
 #loading-overlay {
@@ -429,9 +508,11 @@ kbd {
 @keyframes spin { to { transform: rotate(360deg); } }
 
 #priceChart {
-  height: 56vh !important;
-  min-height: 430px;
-  max-height: 640px;
+  display: block;
+  width: 100% !important;
+  height: 62vh !important;
+  min-height: 500px;
+  max-height: 760px;
 }
 
 .chart-hint {
@@ -672,8 +753,8 @@ code {
   }
 
   #priceChart {
-    height: 50vh !important;
-    min-height: 350px;
+    height: 52vh !important;
+    min-height: 380px;
   }
 }
 
@@ -681,8 +762,7 @@ code {
   body { padding: 12px; }
 
   .side-column .fetch-bar {
-    flex-direction: column;
-    align-items: stretch;
+    grid-template-columns: 1fr;
   }
 
   .side-column #symbolInput,
@@ -703,7 +783,7 @@ code {
   .side-column .ctrl-pill,
   .side-column .checkbox-pill {
     width: 100%;
-    justify-content: space-between;
+    justify-content: flex-start;
   }
 
   .chart-hint {
@@ -712,7 +792,7 @@ code {
   }
 
   #priceChart {
-    height: 44vh !important;
-    min-height: 280px;
+    height: 46vh !important;
+    min-height: 320px;
   }
 }
