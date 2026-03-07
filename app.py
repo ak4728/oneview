@@ -35,7 +35,7 @@ def get_ohlcv():
             return jsonify({"error": f"No data found for '{symbol}'. Try: BTC-USD, AAPL, EURUSD=X"}), 404
 
         # Strip timezone for clean JSON
-        df.index = df.index.tz_localize(None) if df.index.tzinfo else df.index
+        df.index = df.index.tz_localize(None) if df.index.tzinfo else df.index # type: ignore
         df.reset_index(inplace=True)
 
         date_col = "Datetime" if "Datetime" in df.columns else "Date"
