@@ -75,3 +75,21 @@ GET /api/ohlcv?symbol=BTC-USD&interval=5m
 - If port `4000` is in use, stop the process using it before starting the Node server.
 - If the page loads without styles or scripts, verify `styles.css` and `main.js` are reachable from your chosen server.
 - If no candles appear after filtering, switch range to `All` and try again.
+
+## Run server (Windows)
+
+A convenience batch file `run_server.bat` was added to start the Flask app from the repository root. It will try to activate a `.venv` in the repo root or `indicator_prototype` if present.
+
+Usage:
+
+```powershell
+.\run_server.bat         # starts on port 5000
+.\run_server.bat 8000    # start on port 8000
+```
+
+If you prefer to activate your virtual environment manually, run:
+
+```powershell
+& .venv\Scripts\Activate.ps1
+python app.py
+```
